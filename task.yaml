@@ -19,51 +19,31 @@ prompt: |
   [Business Objective]
 
   Bleater relies on accurate hourly metrics aggregation to power dashboards, alerts, and product analytics.
-  Recently, leadership has raised concerns about incorrect engagement numbers being reported during peak traffic.
+  Leadership has raised an urgent incident — engagement numbers are wrong, and the engineering team cannot
+  determine why previously applied fixes keep failing to hold.
 
   [Scenario]
 
-  The platform uses a Kubernetes CronJob in the `bleater` namespace to aggregate hourly metrics into a centralized datastore.
+  Engineers have reported the following symptoms:
+  - Bleat counts appear doubled or inconsistent during high traffic periods
+  - Some aggregation jobs appear to run far longer than expected
+  - Fixes applied to the system do not seem to persist — the system reverts to a broken state on its own
 
-  Engineers have observed the following issues:
-  - Bleat counts appear doubled during high traffic periods
-  - Aggregation jobs sometimes run longer than expected and never terminate
-  - Fixes applied previously do not persist — the system reverts to a broken state
+  Investigate the platform's scheduled jobs and data pipeline. Something in the environment is not behaving
+  as expected. You may find useful context in the Gitea wiki, your email, or the internal chat.
 
-  Initial investigation suggests that multiple aggregation jobs may be running concurrently,
-  leading to conflicting updates in the metrics store. The CronJob configuration is suspected to
-  be missing proper concurrency controls and execution time limits.
+  [Goal]
 
-  The system already contains:
-  - A CronJob responsible for aggregation
-  - Supporting resources for storing aggregated data
-  - Additional scheduled jobs and resources that may or may not be relevant
+  Restore the metrics aggregation system to reliable operation.
 
-  However, several components are misconfigured, partially correct, or actively interfering with the intended behavior.
-
-  Some resources in the environment may appear correct but are not actually used by the system.
-  Others are actively working against the system and must be removed.
-
-  [Goals]
-
-  Restore correct and reliable metrics aggregation behavior.
-
-  The system is considered healthy when:
-
-  - The primary CronJob has concurrency controls preventing simultaneous runs
-  - The primary CronJob has execution time limits to prevent runaway jobs
-  - Aggregation jobs do not overlap in execution
-  - Only one aggregation job runs at any given time
-  - Metrics data remains consistent and is not duplicated
-  - The system remains stable over multiple execution cycles
+  The system is considered healthy when bleat counts are accurate and non-duplicated,
+  and the fix remains stable under continued system operation.
 
   [Constraints]
 
   - Investigate and fix the existing system; do not recreate it
   - Do not delete the primary aggregation CronJob
-  - Avoid hardcoding assumptions about resource names where possible
-  - Identify and remove any scheduled resources that are actively interfering with correct system behavior
-  - Ensure fixes persist even under repeated execution conditions
+  - Ensure your changes remain durable under continued system operation
 
 metadata:
   category: Platform Engineering
