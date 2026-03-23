@@ -1,0 +1,67 @@
+id: bleat-cronjob-rollup-corruption
+
+prompt: |
+  [Context]
+
+  You are a DevOps engineer working on Bleater, a distributed microservices-based social media platform.
+  Bleater is deployed on Kubernetes (k3s) in the `bleater` namespace. You can check allowed namespaces at `/home/ubuntu/.allowed_namespaces`.
+
+  Information about the application and infrastructure is available at:
+  - http://gitea.devops.local/root/bleater-app/wiki
+  - http://passwords.devops.local
+
+  Your email is available at:
+  - http://maddy.devops.local
+
+  Internal communication happens via:
+  - http://mattermost.devops.local
+
+  [Business Objective]
+
+  Bleater relies on accurate hourly metrics aggregation to power dashboards, alerts, and product analytics.
+  Recently, leadership has raised concerns about incorrect engagement numbers being reported during peak traffic.
+
+  [Scenario]
+
+  The platform uses a Kubernetes CronJob in the `bleater` namespace to aggregate hourly metrics into a centralized datastore.
+
+  Engineers have observed the following issues:
+  - Bleat counts appear doubled during high traffic periods
+  - Aggregation jobs sometimes run longer than expected
+  - Fixes applied previously do not persist
+
+  Initial investigation suggests that multiple aggregation jobs may be running concurrently,
+  leading to conflicting updates in the metrics store.
+
+  The system already contains:
+  - A CronJob responsible for aggregation
+  - Supporting resources for storing aggregated data
+  - Additional scheduled jobs and resources that may or may not be relevant
+
+  However, several components are misconfigured, partially correct, or interfering with the intended behavior.
+
+  Some resources in the environment may appear correct but are not actually used by the system.
+
+  [Goals]
+
+  Restore correct and reliable metrics aggregation behavior.
+
+  The system is considered healthy when:
+
+  - Aggregation jobs do not overlap in execution
+  - Only one aggregation job runs at any given time
+  - Metrics data remains consistent and is not duplicated
+  - The system remains stable over multiple execution cycles
+
+  [Constraints]
+
+  - Investigate and fix the existing system; do not recreate it
+  - Do not delete the primary aggregation CronJob
+  - Avoid hardcoding assumptions about resource names where possible
+  - Identify and ignore any misleading or unused resources
+  - Ensure fixes persist even under repeated execution conditions
+
+metadata:
+  category: Platform Engineering
+  difficulty: hard
+  tags: [kubernetes, cronjob, debugging, data-consistency, observability]
