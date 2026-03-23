@@ -24,16 +24,25 @@ echo "✔ Found CronJob: $CRONJOB_NAME"
 
 # -----------------------------
 # REMOVE TRAP CRONJOBS
+# Query each accessible namespace explicitly — 'kubectl get -A'
+# requires cluster-level list permissions the agent may not have.
 # -----------------------------
 echo "🧹 Removing trap CronJobs..."
 
-kubectl get cronjobs -A -o json | jq -r '
-.items[]
-| select(.metadata.name | startswith("bleat-trap"))
-| "\(.metadata.namespace) \(.metadata.name)"' \
-| while read ns name; do
-  echo "Deleting trap: $name in $ns"
-  kubectl delete cronjob "$name" -n "$ns" --ignore-not-found
+ALLOWED_NS=$(cat /home/ubuntu/.allowed_namespaces 2>/dev/null | tr ',' ' ')
+# Always include default; deduplicate
+ALL_NS=$(echo "$ALLOWED_NS default" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+
+(
+  for CHECK_NS in $ALL_NS; do
+    kubectl get cronjobs -n "$CHECK_NS" -o json 2>/dev/null | jq -r '
+    .items[]
+    | select(.metadata.name | startswith("bleat-trap"))
+    | "\(.metadata.namespace) \(.metadata.name)"'
+  done
+) | sort -u | while read trap_ns trap_name; do
+  echo "Deleting trap: $trap_name in $trap_ns"
+  kubectl delete cronjob "$trap_name" -n "$trap_ns" --ignore-not-found
 done
 
 # -----------------------------

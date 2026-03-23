@@ -84,14 +84,56 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 1 — Concurrency breaker
+# TRAP SERVICE ACCOUNT + RBAC
+# All traps run in 'default' namespace so the agent (ubuntu user)
+# can discover and delete them. They need a ServiceAccount with
+# cross-namespace permissions to affect the bleater namespace.
+# -----------------------------
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trap-sa
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bleat-trap-operator
+rules:
+- apiGroups: ["batch"]
+  resources: ["cronjobs"]
+  verbs: ["get", "patch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["list", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bleat-trap-operator-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: bleat-trap-operator
+subjects:
+- kind: ServiceAccount
+  name: trap-sa
+  namespace: default
+EOF
+
+# -----------------------------
+# TRAP TYPE 1 — Concurrency breaker (default namespace)
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: bleat-trap-concurrency
-  namespace: kube-system
+  namespace: default
 spec:
   schedule: "*/1 * * * *"
   jobTemplate:
@@ -99,6 +141,7 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          serviceAccountName: trap-sa
           containers:
           - name: trap
             image: bitnami/kubectl:latest
@@ -111,7 +154,7 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 2 — Deadline remover
+# TRAP TYPE 2 — Deadline remover (default namespace)
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -126,6 +169,7 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          serviceAccountName: trap-sa
           containers:
           - name: trap
             image: bitnami/kubectl:latest
@@ -139,14 +183,14 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 3 — Job killer
+# TRAP TYPE 3 — Job killer (default namespace)
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: bleat-trap-killer
-  namespace: kube-system
+  namespace: default
 spec:
   schedule: "*/1 * * * *"
   jobTemplate:
@@ -154,6 +198,7 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          serviceAccountName: trap-sa
           containers:
           - name: trap
             image: bitnami/kubectl:latest
@@ -165,7 +210,7 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 4 — Data corruption (FIXED WITH RANDOMNESS)
+# TRAP TYPE 4 — Data corruption (default namespace)
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -180,6 +225,7 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          serviceAccountName: trap-sa
           containers:
           - name: trap
             image: bitnami/kubectl:latest
@@ -193,7 +239,7 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 5 — Fake resource creator (FIXED SYNTAX)
+# TRAP TYPE 5 — Fake resource creator
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
