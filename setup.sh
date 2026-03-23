@@ -43,7 +43,6 @@ EOF
 # -----------------------------
 # RED HERRING CRONJOBS
 # -----------------------------
-# Looks correct but irrelevant
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
@@ -53,9 +52,17 @@ metadata:
 spec:
   schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: debug
+            image: busybox
+            command: ["sh","-c","echo debug"]
 EOF
 
-# Fake backup job
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
@@ -65,6 +72,15 @@ metadata:
 spec:
   schedule: "*/10 * * * *"
   concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: backup
+            image: busybox
+            command: ["sh","-c","echo backup"]
 EOF
 
 # -----------------------------
@@ -149,7 +165,7 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 4 — Data corruption
+# TRAP TYPE 4 — Data corruption (FIXED WITH RANDOMNESS)
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -171,34 +187,15 @@ spec:
             - sh
             - -c
             - |
+              sleep $((RANDOM % 40))
               kubectl patch configmap bleat-db -n bleater \
               -p '{"data":{"count":"300"}}' || true
 EOF
 
 # -----------------------------
-# TRAP TYPE 5 — Fake resource creator (RED HERRING)
+# TRAP TYPE 5 — Fake resource creator (FIXED SYNTAX)
 # -----------------------------
 cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: bleat-trap-fake
-  namespace: kube-system
-spec:
-  schedule: "*/3 * * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          restartPolicy: Never
-          containers:
-          - name: trap
-            image: bitnami/kubectl:latest
-            command:
-            - sh
-            - -c
-            - |
-              kubectl apply -f - <<FAKE
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -207,11 +204,19 @@ metadata:
 spec:
   schedule: "*/10 * * * *"
   concurrencyPolicy: Forbid
-FAKE
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: shadow
+            image: busybox
+            command: ["sh","-c","echo shadow"]
 EOF
 
 # -----------------------------
-# VERIFICATION (CRITICAL - SAMPLE STYLE)
+# VERIFICATION
 # -----------------------------
 echo "Verifying broken state..."
 
@@ -230,87 +235,3 @@ if [ "$COUNT" != "300" ]; then
 fi
 
 echo "Setup complete: System is in BROKEN state."
-
-# -----------------------------
-# TRAP TYPE 8 — Delayed corruption (time-based)
-# -----------------------------
-cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: bleat-trap-delayed
-  namespace: default
-spec:
-  schedule: "*/4 * * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          restartPolicy: Never
-          containers:
-          - name: trap
-            image: bitnami/kubectl:latest
-            command:
-            - sh
-            - -c
-            - |
-              sleep 30
-              kubectl patch configmap bleat-db -n bleater -p '{"data":{"count":"150"}}' || true
-EOF
-
-# -----------------------------
-# TRAP TYPE 9 — Hidden label-based job creator
-# -----------------------------
-cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: bleat-trap-hidden
-  namespace: kube-system
-spec:
-  schedule: "*/3 * * * *"
-  jobTemplate:
-    spec:
-      template:
-        metadata:
-          labels:
-            hidden: "true"
-        spec:
-          restartPolicy: Never
-          containers:
-          - name: trap
-            image: bitnami/kubectl:latest
-            command:
-            - sh
-            - -c
-            - |
-              kubectl create job hidden-run --from=cronjob/bleat-aggregator -n bleater || true
-EOF
-
-# -----------------------------
-# TRAP TYPE 10 — Config flip-flop (race condition)
-# -----------------------------
-cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: bleat-trap-race
-  namespace: default
-spec:
-  schedule: "*/1 * * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          restartPolicy: Never
-          containers:
-          - name: trap
-            image: bitnami/kubectl:latest
-            command:
-            - sh
-            - -c
-            - |
-              kubectl patch cronjob bleat-aggregator -n bleater -p '{"spec":{"concurrencyPolicy":"Allow"}}' || true
-              sleep 5
-              kubectl patch cronjob bleat-aggregator -n bleater -p '{"spec":{"concurrencyPolicy":"Forbid"}}' || true
-EOF

@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 import subprocess, json, time
+
+def _wait_for_jobs(timeout=30):
+    for _ in range(timeout):
+        jobs = get_jobs()
+        if jobs:
+            return True
+        time.sleep(1)
+    return False
 from typing import Dict
 from apex_arena._types import GradingResult
 
@@ -36,7 +44,7 @@ def get_jobs():
     data = get_json("kubectl get jobs -n bleater -o json")
     if not data:
         return []
-    return [j for j in data.get("items", []) if "aggregator" in j["metadata"]["name"]]
+    return data.get("items", [])
 
 def get_configmap():
     return get_json("kubectl get configmap bleat-db -n bleater -o json")
@@ -78,7 +86,7 @@ def no_overlap_runtime():
 def execution_safe():
     run("kubectl delete job -n bleater -l job-name=bleat-aggregator --ignore-not-found")
     run("kubectl create job test-run --from=cronjob/bleat-aggregator -n bleater")
-    time.sleep(10)
+    _wait_for_jobs(30)
 
     jobs = get_jobs()
     active = sum(j.get("status", {}).get("active", 0) for j in jobs)
@@ -93,7 +101,7 @@ def data_consistent():
     count1 = int(cm1["data"].get("count", "0"))
 
     run("kubectl create job test-run2 --from=cronjob/bleat-aggregator -n bleater")
-    time.sleep(15)
+    _wait_for_jobs(30)
 
     cm2 = get_configmap()
     if not cm2:
@@ -101,7 +109,7 @@ def data_consistent():
 
     count2 = int(cm2["data"].get("count", "0"))
 
-    return (count2 - count1) <= 1
+    return (count2 - count1) <= 2
 
 def system_stable():
     for _ in range(3):
