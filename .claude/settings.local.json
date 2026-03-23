@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m markitdown 'C:/Users/malle/Desktop/Bespoke documents/Bespoke Onboarding Experience_2_of_3_Feb2026_S3.pptx')",
+      "Bash(python -m markitdown 'C:/Users/malle/Desktop/Bespoke documents/Apex Setup Guide.pptx')",
+      "Bash(pip show:*)",
+      "Bash(python -c \"from markitdown import MarkItDown; md = MarkItDown\\(\\); result = md.convert\\(''''C:/Users/malle/Desktop/Bespoke documents/Bespoke Onboarding Experience_2_of_3_Feb2026_S3.pptx''''\\); print\\(result.text_content[:3000]\\)\")",
+      "Bash(python3 -c \"from markitdown import MarkItDown; md = MarkItDown\\(\\); result = md.convert\\(''C:/Users/malle/Desktop/Bespoke documents/Bespoke Onboarding Experience_2_of_3_Feb2026_S3.pptx''\\); print\\(result.text_content[:4000]\\)\")",
+      "Bash(where python3:*)",
+      "Bash(where python:*)",
+      "Bash(where py:*)",
+      "Bash(py -3 -c \"from markitdown import MarkItDown; md = MarkItDown\\(\\); result = md.convert\\(''C:/Users/malle/Desktop/Bespoke documents/Bespoke Onboarding Experience_2_of_3_Feb2026_S3.pptx''\\); print\\(result.text_content[:4000]\\)\")",
+      "Bash(/c/Users/malle/AppData/Local/Programs/Python/Python*/python.exe)",
+      "Bash(-c \"print\\(''found''\\)\")",
+      "Read(//c/Users/malle/AppData/Local/Programs//**)",
+      "Bash(\"/c/Users/malle/AppData/Local/Microsoft/WindowsApps/python3.exe\" -c \"from markitdown import MarkItDown; md = MarkItDown\\(\\); result = md.convert\\(''C:/Users/malle/Desktop/Bespoke documents/Bespoke Onboarding Experience_2_of_3_Feb2026_S3.pptx''\\); print\\(result.text_content[:5000]\\)\")"
+    ]
+  }
+}

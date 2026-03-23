@@ -20,3 +20,4 @@ COPY grader.py /mcp_server/tests/grader.py
 
 RUN chmod +x /setup.sh /solution.sh
 RUN chmod 700 /grader
+RUN chmod 600 /mcp_server/tests/grader.py
