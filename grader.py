@@ -162,14 +162,17 @@ def grade(ctx=None) -> GradingResult:
     overlap = check_no_overlap()
     subscores["no_overlap"] = 1.0 if overlap else 0.0
 
+    # Run stability check before test-job-creating checks so grader-spawned
+    # jobs (test-exec, test-data) don't interfere with the CronJob controller's
+    # concurrency decisions during the observation window.
+    stable = check_system_stable()
+    subscores["system_stable"] = 1.0 if stable else 0.0
+
     exec_ok = check_execution_safe()
     subscores["execution_safe"] = 1.0 if exec_ok else 0.0
 
     data_ok = check_data_consistent()
     subscores["data_correct"] = 1.0 if data_ok else 0.0
-
-    stable = check_system_stable()
-    subscores["system_stable"] = 1.0 if stable else 0.0
 
     # Equal weights (Nebula standard)
     n = len(subscores)
@@ -181,9 +184,9 @@ def grade(ctx=None) -> GradingResult:
         f"ConfigFixed: {'✓' if cfg else '✗'}",
         f"TrapsRemoved: {'✓' if traps else '✗'}",
         f"NoOverlap: {'✓' if overlap else '✗'}",
+        f"SystemStable: {'✓' if stable else '✗'}",
         f"ExecutionSafe: {'✓' if exec_ok else '✗'}",
         f"DataCorrect: {'✓' if data_ok else '✗'}",
-        f"SystemStable: {'✓' if stable else '✗'}",
     ]
 
     return GradingResult(

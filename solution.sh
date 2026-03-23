@@ -46,9 +46,10 @@ ALL_NS=$(echo "$ALLOWED_NS default" | tr ' ' '\n' | sort -u | tr '\n' ' ')
   kubectl delete cronjob "$trap_name" -n "$trap_ns" --ignore-not-found
 done
 
-# Step 2: Delete any in-flight trap jobs (kills their pods immediately).
-# Deleting only the CronJob leaves already-running jobs alive; those pods
-# can still complete and revert our config patch below.
+# Step 2: Force-delete any in-flight trap jobs with --grace-period=0 to
+# immediately SIGKILL container processes. Without this, pods enter
+# "Terminating" state for up to 30s (default grace period) and can still
+# run kubectl commands that revert our config patch below.
 for CHECK_NS in $ALL_NS; do
   (
     kubectl get jobs -n "$CHECK_NS" -o json 2>/dev/null | jq -r '
@@ -56,14 +57,15 @@ for CHECK_NS in $ALL_NS; do
     | select(.metadata.name | startswith("bleat-trap"))
     | .metadata.name'
   ) | while read job_name; do
-    echo "Deleting trap job: $job_name in $CHECK_NS"
-    kubectl delete job "$job_name" -n "$CHECK_NS" --ignore-not-found
+    echo "Force-deleting trap job: $job_name in $CHECK_NS"
+    kubectl delete job "$job_name" -n "$CHECK_NS" --grace-period=0 --force --ignore-not-found 2>/dev/null || \
+      kubectl delete job "$job_name" -n "$CHECK_NS" --ignore-not-found
   done
 done
 
-# Step 3: Brief wait to let any pod that already issued a kubectl command
-# to finish terminating before we apply our config patch.
-sleep 5
+# Step 3: Wait for any pods already past the point-of-no-return on their
+# kubectl commands to finish. 10s covers the API round-trip.
+sleep 10
 
 # -----------------------------
 # FIX CRONJOB CONFIGURATION
@@ -148,5 +150,20 @@ fi
 
 echo "⏳ Waiting for stabilization..."
 sleep 20
+
+# Re-apply Forbid as a belt-and-suspenders measure: any trap pod that was in
+# "Terminating" state and issued a revert before dying would have been
+# overwritten by our earlier patch, but we apply once more to be certain.
+kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p '{
+  "spec":{
+    "concurrencyPolicy":"Forbid",
+    "startingDeadlineSeconds":300,
+    "jobTemplate":{
+      "spec":{
+        "activeDeadlineSeconds":1800
+      }
+    }
+  }
+}'
 
 echo "✅ System successfully restored"
