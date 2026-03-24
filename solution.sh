@@ -54,10 +54,7 @@ ALL_NS=$(echo "$ALLOWED_NS default" | tr ' ' '\n' | sort -u | tr '\n' ' ')
     --ignore-not-found --wait=false 2>/dev/null || true
 done
 
-# Step 2: Force-delete any in-flight trap jobs with --grace-period=0 to
-# immediately SIGKILL container processes. Without this, pods enter
-# "Terminating" state for up to 30s (default grace period) and can still
-# run kubectl commands that revert our config patch below.
+# Step 2: Force-delete any in-flight trap jobs.
 for CHECK_NS in $ALL_NS; do
   (
     kubectl get jobs -n "$CHECK_NS" -o json 2>/dev/null | jq -r '
@@ -72,9 +69,31 @@ for CHECK_NS in $ALL_NS; do
   done
 done
 
-# Step 3: Wait for any pods already past the point-of-no-return on their
-# kubectl commands to finish. 10s covers the API round-trip.
-sleep 10
+# Step 3: Directly force-kill trap PODS by their job-name label.
+# CRITICAL: kubectl delete job --grace-period=0 removes the Job object from etcd
+# but the GC controller still honours each pod's own terminationGracePeriodSeconds
+# (default 30 s) before sending SIGKILL.  A trap pod that already started its
+# `kubectl patch concurrencyPolicy=Allow` command can therefore survive for up to
+# 30 s after the job is deleted and revert our fix.  Deleting the pods directly
+# with --grace-period=0 bypasses that grace window entirely.
+for CHECK_NS in $ALL_NS; do
+  kubectl get pods -n "$CHECK_NS" -o json 2>/dev/null | jq -r '
+  .items[]
+  | select(
+      ( .metadata.labels["batch.kubernetes.io/job-name"]
+        // .metadata.labels["job-name"]
+        // ""
+      ) | startswith("bleat-trap")
+    )
+  | .metadata.name' | while read pod_name; do
+    echo "Force-killing trap pod: $pod_name in $CHECK_NS"
+    timeout 10 kubectl delete pod "$pod_name" -n "$CHECK_NS" \
+      --grace-period=0 --force --ignore-not-found 2>/dev/null || true
+  done
+done
+
+# Step 4: Brief wait to let the API server propagate the pod deletions.
+sleep 5
 
 # Restore strict error handling for the rest of the script.
 set -e

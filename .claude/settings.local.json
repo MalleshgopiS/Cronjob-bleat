@@ -13,7 +13,9 @@
       "Bash(/c/Users/malle/AppData/Local/Programs/Python/Python*/python.exe)",
       "Bash(-c \"print\\(''found''\\)\")",
       "Read(//c/Users/malle/AppData/Local/Programs//**)",
-      "Bash(\"/c/Users/malle/AppData/Local/Microsoft/WindowsApps/python3.exe\" -c \"from markitdown import MarkItDown; md = MarkItDown\\(\\); result = md.convert\\(''C:/Users/malle/Desktop/Bespoke documents/Bespoke Onboarding Experience_2_of_3_Feb2026_S3.pptx''\\); print\\(result.text_content[:5000]\\)\")"
+      "Bash(\"/c/Users/malle/AppData/Local/Microsoft/WindowsApps/python3.exe\" -c \"from markitdown import MarkItDown; md = MarkItDown\\(\\); result = md.convert\\(''C:/Users/malle/Desktop/Bespoke documents/Bespoke Onboarding Experience_2_of_3_Feb2026_S3.pptx''\\); print\\(result.text_content[:5000]\\)\")",
+      "Read(//c/Users/malle/Desktop/Bespoke documents/Pod 3 task/Inprogress/**)",
+      "Bash(apex-arena test-solution:*)"
     ]
   }
 }
