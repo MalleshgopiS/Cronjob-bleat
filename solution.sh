@@ -29,6 +29,10 @@ echo "✔ Found CronJob: $CRONJOB_NAME"
 # -----------------------------
 echo "🧹 Removing trap CronJobs and in-flight trap jobs..."
 
+# Disable exit-on-error for the trap cleanup block: individual kubectl
+# timeouts should not abort the whole script — we continue regardless.
+set +e
+
 ALLOWED_NS=$(cat /home/ubuntu/.allowed_namespaces 2>/dev/null | tr ',' ' ')
 # Always include default; deduplicate
 ALL_NS=$(echo "$ALLOWED_NS default" | tr ' ' '\n' | sort -u | tr '\n' ' ')
@@ -43,7 +47,11 @@ ALL_NS=$(echo "$ALLOWED_NS default" | tr ' ' '\n' | sort -u | tr '\n' ' ')
   done
 ) | sort -u | while read trap_ns trap_name; do
   echo "Deleting trap CronJob: $trap_name in $trap_ns"
-  kubectl delete cronjob "$trap_name" -n "$trap_ns" --ignore-not-found
+  # --wait=false: return immediately without blocking on cascade pod termination.
+  # This prevents a server-side timeout when the CronJob has active pods that
+  # take time to terminate (e.g. bleat-trap-killer running kubectl commands).
+  timeout 15 kubectl delete cronjob "$trap_name" -n "$trap_ns" \
+    --ignore-not-found --wait=false 2>/dev/null || true
 done
 
 # Step 2: Force-delete any in-flight trap jobs with --grace-period=0 to
@@ -58,14 +66,18 @@ for CHECK_NS in $ALL_NS; do
     | .metadata.name'
   ) | while read job_name; do
     echo "Force-deleting trap job: $job_name in $CHECK_NS"
-    kubectl delete job "$job_name" -n "$CHECK_NS" --grace-period=0 --force --ignore-not-found 2>/dev/null || \
-      kubectl delete job "$job_name" -n "$CHECK_NS" --ignore-not-found
+    timeout 15 kubectl delete job "$job_name" -n "$CHECK_NS" \
+      --grace-period=0 --force --ignore-not-found 2>/dev/null || \
+      kubectl delete job "$job_name" -n "$CHECK_NS" --ignore-not-found 2>/dev/null || true
   done
 done
 
 # Step 3: Wait for any pods already past the point-of-no-return on their
 # kubectl commands to finish. 10s covers the API round-trip.
 sleep 10
+
+# Restore strict error handling for the rest of the script.
+set -e
 
 # -----------------------------
 # FIX CRONJOB CONFIGURATION
