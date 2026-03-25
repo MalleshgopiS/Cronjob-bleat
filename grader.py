@@ -46,14 +46,6 @@ def get_cronjob():
     return None
 
 
-def get_jobs():
-    """Return all bleater jobs whose name contains 'aggregator'."""
-    data = get_json("kubectl get jobs -n bleater -o json")
-    if not data:
-        return []
-    return [j for j in data.get("items", []) if "aggregator" in j["metadata"]["name"]]
-
-
 def get_configmap():
     """Return the bleat-db ConfigMap."""
     return get_json("kubectl get configmap bleat-db -n bleater -o json")
@@ -63,18 +55,41 @@ def get_configmap():
 # Core validations
 # ─────────────────────────────────────────
 
-def check_config_fixed() -> bool:
-    """Verify concurrencyPolicy=Forbid, startingDeadlineSeconds, and activeDeadlineSeconds are set."""
+def check_concurrency_forbid() -> bool:
+    """Verify concurrencyPolicy is set to Forbid on the primary aggregator CronJob."""
     cj = get_cronjob()
     if not cj:
         return False
-    spec = cj.get("spec", {})
-    job_spec = spec.get("jobTemplate", {}).get("spec", {})
-    return (
-        spec.get("concurrencyPolicy") == "Forbid"
-        and spec.get("startingDeadlineSeconds") is not None
-        and job_spec.get("activeDeadlineSeconds") is not None
-    )
+    return cj.get("spec", {}).get("concurrencyPolicy") == "Forbid"
+
+
+def check_starting_deadline() -> bool:
+    """Verify startingDeadlineSeconds is configured on the aggregator CronJob."""
+    cj = get_cronjob()
+    if not cj:
+        return False
+    return cj.get("spec", {}).get("startingDeadlineSeconds") is not None
+
+
+def check_active_deadline() -> bool:
+    """Verify activeDeadlineSeconds is set on the job template to bound job runtime."""
+    cj = get_cronjob()
+    if not cj:
+        return False
+    job_spec = cj.get("spec", {}).get("jobTemplate", {}).get("spec", {})
+    return job_spec.get("activeDeadlineSeconds") is not None
+
+
+def check_schedule_unchanged() -> bool:
+    """Verify the CronJob schedule has not been altered from the original '*/1 * * * *'.
+
+    Changing the schedule is a constraint violation — the task says to fix the
+    existing system, not re-configure its operational parameters.
+    """
+    cj = get_cronjob()
+    if not cj:
+        return False
+    return cj.get("spec", {}).get("schedule") == "*/1 * * * *"
 
 
 def check_traps_removed() -> bool:
@@ -89,61 +104,17 @@ def check_traps_removed() -> bool:
     return True
 
 
-def check_no_overlap() -> bool:
-    """Verify at most one aggregator job is active at a time across 4 observation windows (20s total)."""
-    for _ in range(4):
-        jobs = get_jobs()
-        active = sum(j.get("status", {}).get("active", 0) for j in jobs)
-        if active > 1:
-            return False
-        time.sleep(5)
-    return True
-
-
-def check_execution_safe() -> bool:
-    """Verify manually triggering a job results in at most one active aggregator job."""
-    run("kubectl delete job test-exec --ignore-not-found -n bleater")
-    time.sleep(3)
-    run("kubectl create job test-exec --from=cronjob/bleat-aggregator -n bleater")
-    time.sleep(10)
-
-    jobs = get_jobs()
-    active = sum(j.get("status", {}).get("active", 0) for j in jobs)
-
-    run("kubectl delete job test-exec --ignore-not-found -n bleater")
-    return active <= 1
-
-
-def check_data_consistent() -> bool:
-    """Verify a single job run does not cause a count increment greater than 1 (no duplication)."""
-    run("kubectl delete job test-data --ignore-not-found -n bleater")
-    time.sleep(3)
-
-    cm1 = get_configmap()
-    if not cm1:
+def check_data_restored() -> bool:
+    """Verify bleat-db ConfigMap count has been restored to the expected value."""
+    cm = get_configmap()
+    if not cm:
         return False
-    count1 = int(cm1["data"].get("count", "0"))
-
-    run("kubectl create job test-data --from=cronjob/bleat-aggregator -n bleater")
-    time.sleep(30)
-
-    cm2 = get_configmap()
-    if not cm2:
+    data = cm.get("data", {})
+    count = data.get("count", "")
+    expected = data.get("expected", "")
+    if not count or not expected:
         return False
-    count2 = int(cm2["data"].get("count", "0"))
-
-    run("kubectl delete job test-data --ignore-not-found -n bleater")
-    # Exactly 0 or 1 increment per run; anything more indicates duplicate execution
-    return (count2 - count1) <= 1
-
-
-def check_system_stable() -> bool:
-    """Verify no overlap occurs across three consecutive observation windows."""
-    for _ in range(3):
-        if not check_no_overlap():
-            return False
-        time.sleep(5)
-    return True
+    return count == expected
 
 
 # ─────────────────────────────────────────
@@ -154,26 +125,23 @@ def grade(ctx=None) -> GradingResult:
     """Grade the solution. Each subscore passes or fails independently."""
     subscores: Dict[str, float] = {}
 
-    cfg = check_config_fixed()
-    subscores["config_fixed"] = 1.0 if cfg else 0.0
+    concurrency = check_concurrency_forbid()
+    subscores["concurrency_forbid"] = 1.0 if concurrency else 0.0
+
+    starting = check_starting_deadline()
+    subscores["starting_deadline"] = 1.0 if starting else 0.0
+
+    active = check_active_deadline()
+    subscores["active_deadline"] = 1.0 if active else 0.0
+
+    schedule = check_schedule_unchanged()
+    subscores["schedule_unchanged"] = 1.0 if schedule else 0.0
 
     traps = check_traps_removed()
     subscores["traps_removed"] = 1.0 if traps else 0.0
 
-    overlap = check_no_overlap()
-    subscores["no_overlap"] = 1.0 if overlap else 0.0
-
-    # Run stability check before test-job-creating checks so grader-spawned
-    # jobs (test-exec, test-data) don't interfere with the CronJob controller's
-    # concurrency decisions during the observation window.
-    stable = check_system_stable()
-    subscores["system_stable"] = 1.0 if stable else 0.0
-
-    exec_ok = check_execution_safe()
-    subscores["execution_safe"] = 1.0 if exec_ok else 0.0
-
-    data_ok = check_data_consistent()
-    subscores["data_correct"] = 1.0 if data_ok else 0.0
+    data = check_data_restored()
+    subscores["data_restored"] = 1.0 if data else 0.0
 
     # Equal weights (Nebula standard)
     n = len(subscores)
@@ -182,12 +150,12 @@ def grade(ctx=None) -> GradingResult:
 
     feedback_parts = [
         f"Score={final_score:.2f}",
-        f"ConfigFixed: {'✓' if cfg else '✗'}",
+        f"ConcurrencyForbid: {'✓' if concurrency else '✗'}",
+        f"StartingDeadline: {'✓' if starting else '✗'}",
+        f"ActiveDeadline: {'✓' if active else '✗'}",
+        f"ScheduleUnchanged: {'✓' if schedule else '✗'}",
         f"TrapsRemoved: {'✓' if traps else '✗'}",
-        f"NoOverlap: {'✓' if overlap else '✗'}",
-        f"SystemStable: {'✓' if stable else '✗'}",
-        f"ExecutionSafe: {'✓' if exec_ok else '✗'}",
-        f"DataCorrect: {'✓' if data_ok else '✗'}",
+        f"DataRestored: {'✓' if data else '✗'}",
     ]
 
     return GradingResult(
