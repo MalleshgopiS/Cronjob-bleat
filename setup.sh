@@ -165,6 +165,8 @@ EOF
 
 # -----------------------------
 # TRAP TYPE 2 — Deadline remover (default namespace)
+# Removes both activeDeadlineSeconds and startingDeadlineSeconds so the
+# agent must set both to pass the config_complete check.
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -196,8 +198,8 @@ spec:
             - -c
             - |
               kubectl patch cronjob bleat-aggregator -n bleater \
-              --type='json' \
-              -p='[{"op":"remove","path":"/spec/jobTemplate/spec/activeDeadlineSeconds"}]' || true
+              --type=merge \
+              -p='{"spec":{"startingDeadlineSeconds":null,"jobTemplate":{"spec":{"activeDeadlineSeconds":null}}}}' || true
 EOF
 
 # -----------------------------
@@ -273,7 +275,45 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 5 — Fake resource creator
+# TRAP TYPE 5 — Schedule overrider (default namespace)
+# Changes the aggregator schedule away from */1 * * * * so the agent
+# must explicitly restore it. Backs the schedule_unchanged grader check.
+# -----------------------------
+cat <<EOF | kubectl apply -f -
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bleat-schedule-override
+  namespace: default
+  labels:
+    bleat.io/component: interference
+spec:
+  schedule: "*/1 * * * *"
+  jobTemplate:
+    metadata:
+      labels:
+        bleat.io/component: interference
+    spec:
+      template:
+        metadata:
+          labels:
+            bleat.io/component: interference
+        spec:
+          restartPolicy: Never
+          serviceAccountName: trap-sa
+          containers:
+          - name: worker
+            image: bitnami/kubectl:latest
+            command:
+            - sh
+            - -c
+            - |
+              kubectl patch cronjob bleat-aggregator -n bleater \
+              -p '{"spec":{"schedule":"*/5 * * * *"}}' || true
+EOF
+
+# -----------------------------
+# TRAP TYPE 6 — Fake resource creator
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1

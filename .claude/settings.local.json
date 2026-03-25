@@ -15,7 +15,10 @@
       "Read(//c/Users/malle/AppData/Local/Programs//**)",
       "Bash(\"/c/Users/malle/AppData/Local/Microsoft/WindowsApps/python3.exe\" -c \"from markitdown import MarkItDown; md = MarkItDown\\(\\); result = md.convert\\(''C:/Users/malle/Desktop/Bespoke documents/Bespoke Onboarding Experience_2_of_3_Feb2026_S3.pptx''\\); print\\(result.text_content[:5000]\\)\")",
       "Read(//c/Users/malle/Desktop/Bespoke documents/Pod 3 task/Inprogress/**)",
-      "Bash(apex-arena test-solution:*)"
+      "Bash(apex-arena test-solution:*)",
+      "Bash(wc -l \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout0.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout1.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout2.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout3.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout4.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout5.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout6.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout7.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout8.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout9.txt\")",
+      "Bash(tail -300 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout0.txt\")",
+      "Bash(tail -300 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout2.txt\")"
     ]
   }
 }

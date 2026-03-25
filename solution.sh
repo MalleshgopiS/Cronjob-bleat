@@ -95,6 +95,7 @@ echo "🔧 Fixing CronJob configuration..."
 
 kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p '{
   "spec":{
+    "schedule":"*/1 * * * *",
     "concurrencyPolicy":"Forbid",
     "startingDeadlineSeconds":300,
     "jobTemplate":{
@@ -176,6 +177,7 @@ sleep 20
 # overwritten by our earlier patch, but we apply once more to be certain.
 kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p '{
   "spec":{
+    "schedule":"*/1 * * * *",
     "concurrencyPolicy":"Forbid",
     "startingDeadlineSeconds":300,
     "jobTemplate":{
