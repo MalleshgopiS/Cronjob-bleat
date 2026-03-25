@@ -2,11 +2,15 @@
 """Grader for the Cronjob-bleat task.
 
 Evaluates whether the agent correctly fixed the CronJob-based metrics
-aggregation system in the bleater namespace. Each subscore is independent.
+aggregation system in the bleater namespace. Three equal-weight milestone
+subscores; each is a composite of related checks.
+
+Expected scoring:
+  - Reference solution : 3/3 = 1.00
+  - Typical agent      : 1/3 ≈ 0.33  (mean < 0.50)
 """
 import subprocess
 import json
-import time
 from typing import Dict
 
 from apex_arena._types import GradingResult
@@ -55,29 +59,21 @@ def get_configmap():
 # Core validations
 # ─────────────────────────────────────────
 
-def check_concurrency_forbid() -> bool:
-    """Verify concurrencyPolicy is set to Forbid on the primary aggregator CronJob."""
+def check_config_complete() -> bool:
+    """Verify all three CronJob safety settings are applied:
+    concurrencyPolicy=Forbid, startingDeadlineSeconds, and activeDeadlineSeconds.
+    All three must be present for the aggregator to run safely.
+    """
     cj = get_cronjob()
     if not cj:
         return False
-    return cj.get("spec", {}).get("concurrencyPolicy") == "Forbid"
-
-
-def check_starting_deadline() -> bool:
-    """Verify startingDeadlineSeconds is configured on the aggregator CronJob."""
-    cj = get_cronjob()
-    if not cj:
-        return False
-    return cj.get("spec", {}).get("startingDeadlineSeconds") is not None
-
-
-def check_active_deadline() -> bool:
-    """Verify activeDeadlineSeconds is set on the job template to bound job runtime."""
-    cj = get_cronjob()
-    if not cj:
-        return False
-    job_spec = cj.get("spec", {}).get("jobTemplate", {}).get("spec", {})
-    return job_spec.get("activeDeadlineSeconds") is not None
+    spec = cj.get("spec", {})
+    job_spec = spec.get("jobTemplate", {}).get("spec", {})
+    return (
+        spec.get("concurrencyPolicy") == "Forbid"
+        and spec.get("startingDeadlineSeconds") is not None
+        and job_spec.get("activeDeadlineSeconds") is not None
+    )
 
 
 def check_schedule_unchanged() -> bool:
@@ -122,26 +118,25 @@ def check_data_restored() -> bool:
 # ─────────────────────────────────────────
 
 def grade(ctx=None) -> GradingResult:
-    """Grade the solution. Each subscore passes or fails independently."""
+    """Grade the solution. Three equal-weight milestone subscores."""
     subscores: Dict[str, float] = {}
 
-    concurrency = check_concurrency_forbid()
-    subscores["concurrency_forbid"] = 1.0 if concurrency else 0.0
+    # ── Milestone 1: CronJob fully configured ──
+    # All three safety controls must be present: concurrencyPolicy=Forbid,
+    # startingDeadlineSeconds, and activeDeadlineSeconds.
+    cfg = check_config_complete()
+    subscores["config_complete"] = 1.0 if cfg else 0.0
 
-    starting = check_starting_deadline()
-    subscores["starting_deadline"] = 1.0 if starting else 0.0
-
-    active = check_active_deadline()
-    subscores["active_deadline"] = 1.0 if active else 0.0
-
+    # ── Milestone 2: Operational parameters preserved ──
+    # The schedule must remain unchanged (fixing the system ≠ rescheduling it).
     schedule = check_schedule_unchanged()
     subscores["schedule_unchanged"] = 1.0 if schedule else 0.0
 
+    # ── Milestone 3: Environment cleaned and data restored ──
+    # Interference CronJobs removed and corrupted data corrected.
     traps = check_traps_removed()
-    subscores["traps_removed"] = 1.0 if traps else 0.0
-
     data = check_data_restored()
-    subscores["data_restored"] = 1.0 if data else 0.0
+    subscores["traps_and_data"] = 1.0 if (traps and data) else 0.0
 
     # Equal weights (Nebula standard)
     n = len(subscores)
@@ -150,9 +145,7 @@ def grade(ctx=None) -> GradingResult:
 
     feedback_parts = [
         f"Score={final_score:.2f}",
-        f"ConcurrencyForbid: {'✓' if concurrency else '✗'}",
-        f"StartingDeadline: {'✓' if starting else '✗'}",
-        f"ActiveDeadline: {'✓' if active else '✗'}",
+        f"ConfigComplete: {'✓' if cfg else '✗'}",
         f"ScheduleUnchanged: {'✓' if schedule else '✗'}",
         f"TrapsRemoved: {'✓' if traps else '✗'}",
         f"DataRestored: {'✓' if data else '✗'}",
