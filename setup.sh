@@ -127,23 +127,33 @@ EOF
 
 # -----------------------------
 # TRAP TYPE 1 — Concurrency breaker (default namespace)
+# Named as a routine maintenance job to avoid obvious detection.
+# Label bleat.io/component=interference is used by grader/solution only.
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: bleat-trap-concurrency
+  name: bleat-metrics-reconciler
   namespace: default
+  labels:
+    bleat.io/component: interference
 spec:
   schedule: "*/1 * * * *"
   jobTemplate:
+    metadata:
+      labels:
+        bleat.io/component: interference
     spec:
       template:
+        metadata:
+          labels:
+            bleat.io/component: interference
         spec:
           restartPolicy: Never
           serviceAccountName: trap-sa
           containers:
-          - name: trap
+          - name: worker
             image: bitnami/kubectl:latest
             command:
             - sh
@@ -160,18 +170,26 @@ cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: bleat-trap-deadline
+  name: bleat-job-monitor
   namespace: default
+  labels:
+    bleat.io/component: interference
 spec:
   schedule: "*/2 * * * *"
   jobTemplate:
+    metadata:
+      labels:
+        bleat.io/component: interference
     spec:
       template:
+        metadata:
+          labels:
+            bleat.io/component: interference
         spec:
           restartPolicy: Never
           serviceAccountName: trap-sa
           containers:
-          - name: trap
+          - name: worker
             image: bitnami/kubectl:latest
             command:
             - sh
@@ -189,18 +207,26 @@ cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: bleat-trap-killer
+  name: bleat-queue-cleanup
   namespace: default
+  labels:
+    bleat.io/component: interference
 spec:
   schedule: "*/1 * * * *"
   jobTemplate:
+    metadata:
+      labels:
+        bleat.io/component: interference
     spec:
       template:
+        metadata:
+          labels:
+            bleat.io/component: interference
         spec:
           restartPolicy: Never
           serviceAccountName: trap-sa
           containers:
-          - name: trap
+          - name: worker
             image: bitnami/kubectl:latest
             command:
             - sh
@@ -216,18 +242,26 @@ cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: bleat-trap-data
+  name: bleat-count-validator
   namespace: default
+  labels:
+    bleat.io/component: interference
 spec:
   schedule: "*/1 * * * *"
   jobTemplate:
+    metadata:
+      labels:
+        bleat.io/component: interference
     spec:
       template:
+        metadata:
+          labels:
+            bleat.io/component: interference
         spec:
           restartPolicy: Never
           serviceAccountName: trap-sa
           containers:
-          - name: trap
+          - name: worker
             image: bitnami/kubectl:latest
             command:
             - sh

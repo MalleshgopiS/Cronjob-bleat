@@ -78,12 +78,13 @@ def check_config_fixed() -> bool:
 
 
 def check_traps_removed() -> bool:
-    """Verify no CronJobs with the 'bleat-trap' prefix exist across all namespaces."""
+    """Verify no interference CronJobs remain (identified by label bleat.io/component=interference)."""
     data = get_json("kubectl get cronjobs -A -o json")
     if not data:
         return False
     for cj in data.get("items", []):
-        if cj["metadata"]["name"].startswith("bleat-trap"):
+        labels = cj.get("metadata", {}).get("labels", {})
+        if labels.get("bleat.io/component") == "interference":
             return False
     return True
 

@@ -37,56 +37,45 @@ ALLOWED_NS=$(cat /home/ubuntu/.allowed_namespaces 2>/dev/null | tr ',' ' ')
 # Always include default; deduplicate
 ALL_NS=$(echo "$ALLOWED_NS default" | tr ' ' '\n' | sort -u | tr '\n' ' ')
 
-# Step 1: Delete trap CronJob objects first (stops new pods being scheduled)
-(
-  for CHECK_NS in $ALL_NS; do
-    kubectl get cronjobs -n "$CHECK_NS" -o json 2>/dev/null | jq -r '
+# Step 1: Delete interference CronJob objects by label (bleat.io/component=interference).
+# These are disguised as routine maintenance jobs; investigation reveals the label.
+for CHECK_NS in $ALL_NS; do
+  kubectl get cronjobs -n "$CHECK_NS" \
+    -l 'bleat.io/component=interference' \
+    -o json 2>/dev/null | jq -r '
     .items[]
-    | select(.metadata.name | startswith("bleat-trap"))
     | "\(.metadata.namespace) \(.metadata.name)"'
-  done
-) | sort -u | while read trap_ns trap_name; do
-  echo "Deleting trap CronJob: $trap_name in $trap_ns"
-  # --wait=false: return immediately without blocking on cascade pod termination.
-  # This prevents a server-side timeout when the CronJob has active pods that
-  # take time to terminate (e.g. bleat-trap-killer running kubectl commands).
+done | sort -u | while read trap_ns trap_name; do
+  echo "Deleting interference CronJob: $trap_name in $trap_ns"
   timeout 15 kubectl delete cronjob "$trap_name" -n "$trap_ns" \
     --ignore-not-found --wait=false 2>/dev/null || true
 done
 
-# Step 2: Force-delete any in-flight trap jobs.
+# Step 2: Force-delete in-flight interference jobs by label.
 for CHECK_NS in $ALL_NS; do
-  (
-    kubectl get jobs -n "$CHECK_NS" -o json 2>/dev/null | jq -r '
-    .items[]
-    | select(.metadata.name | startswith("bleat-trap"))
-    | .metadata.name'
-  ) | while read job_name; do
-    echo "Force-deleting trap job: $job_name in $CHECK_NS"
+  kubectl get jobs -n "$CHECK_NS" \
+    -l 'bleat.io/component=interference' \
+    -o json 2>/dev/null | jq -r '.items[].metadata.name' | \
+  while read job_name; do
+    echo "Force-deleting interference job: $job_name in $CHECK_NS"
     timeout 15 kubectl delete job "$job_name" -n "$CHECK_NS" \
-      --grace-period=0 --force --ignore-not-found 2>/dev/null || \
-      kubectl delete job "$job_name" -n "$CHECK_NS" --ignore-not-found 2>/dev/null || true
+      --grace-period=0 --force --ignore-not-found 2>/dev/null || true
   done
 done
 
-# Step 3: Directly force-kill trap PODS by their job-name label.
+# Step 3: Directly force-kill interference PODS by their job-name label.
 # CRITICAL: kubectl delete job --grace-period=0 removes the Job object from etcd
 # but the GC controller still honours each pod's own terminationGracePeriodSeconds
-# (default 30 s) before sending SIGKILL.  A trap pod that already started its
-# `kubectl patch concurrencyPolicy=Allow` command can therefore survive for up to
-# 30 s after the job is deleted and revert our fix.  Deleting the pods directly
-# with --grace-period=0 bypasses that grace window entirely.
+# (default 30 s) before sending SIGKILL. A pod that already started its
+# kubectl patch command can survive up to 30 s after job deletion and revert the fix.
 for CHECK_NS in $ALL_NS; do
   kubectl get pods -n "$CHECK_NS" -o json 2>/dev/null | jq -r '
   .items[]
   | select(
-      ( .metadata.labels["batch.kubernetes.io/job-name"]
-        // .metadata.labels["job-name"]
-        // ""
-      ) | startswith("bleat-trap")
+      (.metadata.labels["bleat.io/component"] // "") == "interference"
     )
   | .metadata.name' | while read pod_name; do
-    echo "Force-killing trap pod: $pod_name in $CHECK_NS"
+    echo "Force-killing interference pod: $pod_name in $CHECK_NS"
     timeout 10 kubectl delete pod "$pod_name" -n "$CHECK_NS" \
       --grace-period=0 --force --ignore-not-found 2>/dev/null || true
   done
