@@ -119,6 +119,24 @@ kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p '{
 }'
 
 # -----------------------------
+# RESTORE CLEAN AGGREGATOR COMMAND
+# task.yaml tip: "verify pipeline computation has not been tampered with"
+# The aggregator command has an injected reset line that sets count back to 300
+# after every real aggregation. Remove it by restoring the clean increment-only script.
+# -----------------------------
+echo "🔧 Restoring clean aggregator command (removing injected corruption)..."
+kubectl patch cronjob "$CRONJOB_NAME" -n $NS --type=json -p='[
+  {
+    "op": "replace",
+    "path": "/spec/jobTemplate/spec/template/spec/containers/0/command",
+    "value": [
+      "sh", "-c",
+      "CURRENT=$(kubectl get configmap bleat-db -n bleater -o jsonpath='\''{.data.count}'\'' 2>/dev/null || echo 0); NEW=$((CURRENT + 1)); kubectl patch configmap bleat-db -n bleater -p \"{\\\"data\\\":{\\\"count\\\":\\\"$NEW\\\"}}\" 2>/dev/null || true"
+    ]
+  }
+]'
+
+# -----------------------------
 # CLEAN ACTIVE JOBS
 # -----------------------------
 echo "🧹 Cleaning running jobs..."

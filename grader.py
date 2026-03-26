@@ -117,12 +117,19 @@ def check_traps_removed() -> bool:
 
 
 def check_data_restored() -> bool:
-    """bleat-db count matches expected value.
-    Backed by: bleat-count-validator (labeled, resets count to 300) and
-               bleat-aggregator-shadow (unlabeled, also resets count to 300).
-    Agents that only use label-based detection will miss the shadow trap,
-    leaving it free to re-corrupt data after the agent restores it.
+    """bleat-db count matches expected value AND the aggregator pipeline is not
+    actively re-corrupting it.
+
+    Two-part check (both must pass):
+      1. count == expected in bleat-db ConfigMap  (original check — backed by
+         bleat-count-validator and bleat-aggregator-shadow traps)
+      2. The aggregator CronJob command does not contain the injected reset line
+         that silently sets count back to 300 after each aggregation run.
+         Agents who only patch scheduling fields without reading the full command
+         spec will leave this corruption in place and fail this check.
+         (task.yaml tip: "verify pipeline computation has not been tampered with")
     """
+    # ---- part 1: count correctness (original logic) ----
     cm = get_configmap()
     if not cm:
         return False
@@ -131,7 +138,31 @@ def check_data_restored() -> bool:
     expected = data.get("expected", "")
     if not count or not expected:
         return False
-    return count == expected
+    if count != expected:
+        return False
+
+    # ---- part 2: pipeline integrity (added for model separation) ----
+    # If the aggregator command still contains the injected corruption line that
+    # resets bleat-db to count=300, data will be re-corrupted on the next cycle.
+    # Fail early so agents must read and fix the full CronJob spec.
+    cj = get_cronjob()
+    if cj:
+        containers = (
+            cj.get("spec", {})
+              .get("jobTemplate", {})
+              .get("spec", {})
+              .get("template", {})
+              .get("spec", {})
+              .get("containers", [])
+        )
+        for container in containers:
+            parts = container.get("command", []) + container.get("args", [])
+            full_cmd = " ".join(parts)
+            # Corruption marker: the injected reset line sets count to "300"
+            if 'count":"300' in full_cmd:
+                return False
+
+    return True
 
 
 # ─────────────────────────────────────────

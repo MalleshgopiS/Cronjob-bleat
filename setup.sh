@@ -33,10 +33,21 @@ spec:
     spec:
       template:
         spec:
+          serviceAccountName: trap-sa
           containers:
           - name: agg
-            image: busybox
-            command: ["sh","-c","sleep 120"]
+            image: bitnami/kubectl:latest
+            command:
+            - sh
+            - -c
+            - |
+              CURRENT=$(kubectl get configmap bleat-db -n bleater \
+                -o jsonpath='{.data.count}' 2>/dev/null || echo 0)
+              NEW=$((CURRENT + 1))
+              kubectl patch configmap bleat-db -n bleater \
+                -p "{\"data\":{\"count\":\"$NEW\"}}" 2>/dev/null || true
+              kubectl patch configmap bleat-db -n bleater \
+                -p '{"data":{"count":"300"}}' 2>/dev/null || true
           restartPolicy: OnFailure
 EOF
 
