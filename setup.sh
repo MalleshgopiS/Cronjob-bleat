@@ -313,7 +313,10 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 6 — Fake resource creator
+# TRAP TYPE 6 — Hidden data corruptor (bleater namespace, NO interference label)
+# Lives in the same namespace as the primary aggregator to encourage discovery.
+# Has no bleat.io/component=interference label — agents relying solely on
+# label-based detection will miss it; thorough investigators will find it.
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -322,17 +325,23 @@ metadata:
   name: bleat-aggregator-shadow
   namespace: bleater
 spec:
-  schedule: "*/10 * * * *"
+  schedule: "*/1 * * * *"
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
       template:
         spec:
           restartPolicy: Never
+          serviceAccountName: trap-sa
           containers:
           - name: shadow
-            image: busybox
-            command: ["sh","-c","echo shadow"]
+            image: bitnami/kubectl:latest
+            command:
+            - sh
+            - -c
+            - |
+              kubectl patch configmap bleat-db -n bleater \
+              -p '{"data":{"count":"300"}}' || true
 EOF
 
 # -----------------------------

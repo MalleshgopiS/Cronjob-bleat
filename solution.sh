@@ -81,7 +81,19 @@ for CHECK_NS in $ALL_NS; do
   done
 done
 
-# Step 4: Brief wait to let the API server propagate the pod deletions.
+# Step 4: Remove all non-primary CronJobs from the bleater namespace.
+# This catches hidden/unlabeled interference CronJobs that only appear
+# in the primary namespace (e.g. shadow, debug, backup variants).
+kubectl get cronjobs -n $NS -o json 2>/dev/null | jq -r --arg primary "$CRONJOB_NAME" '
+  .items[]
+  | select(.metadata.name != $primary)
+  | .metadata.name' | while read shadow_name; do
+  echo "Removing non-primary CronJob from bleater: $shadow_name"
+  timeout 15 kubectl delete cronjob "$shadow_name" -n $NS \
+    --ignore-not-found --wait=false 2>/dev/null || true
+done
+
+# Step 5: Brief wait to let the API server propagate the pod deletions.
 sleep 5
 
 # Restore strict error handling for the rest of the script.
