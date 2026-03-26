@@ -18,44 +18,16 @@ kubectl create configmap bleat-db-backup -n $NS \
   --from-literal=count=100 || true
 
 # -----------------------------
-# RUNBOOK — in-cluster documentation
-# Agents who investigate ConfigMaps in the bleater namespace will find this.
-# It documents the exact required settings (including startingDeadlineSeconds)
-# making config_complete discoverable and giving variance to that subscore.
+# SLA PARAMS SECRET — stores exact operational limits
+# Agents who enumerate Secrets in the bleater namespace will find this.
+# It provides the correct numeric values for the deadline fields.
+# Agents who skip Secret investigation will have to derive or guess the values,
+# creating variance in the config_exact subscore.
 # -----------------------------
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: bleat-runbook
-  namespace: $NS
-data:
-  aggregator-config.md: |
-    # Bleat Aggregator — Operations Runbook
-
-    ## Required CronJob Configuration
-
-    The bleat-aggregator CronJob MUST have all of the following set:
-
-      schedule:                  "*/1 * * * *"   # every minute — do NOT change
-      concurrencyPolicy:         Forbid           # prevent overlapping runs
-      startingDeadlineSeconds:   300              # skip run if missed by > 5 min
-      activeDeadlineSeconds:     1800             # kill job if still running after 30 min
-
-    Any deviation from the above causes duplicate counts or stale data.
-
-    ## Known Interference
-
-    Rogue scheduled jobs have been observed reverting configuration changes.
-    Investigate all CronJobs across accessible namespaces — not just the bleater
-    namespace. Some interference sources may not be obviously labelled.
-
-    ## Data Layer
-
-    ConfigMap bleat-db (bleater namespace):
-      count    — current aggregated bleat count (must equal expected)
-      expected — target value (100)
-EOF
+kubectl create secret generic bleat-sla-params -n $NS \
+  --from-literal=startingDeadlineSeconds=300 \
+  --from-literal=activeDeadlineSeconds=1800 \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # -----------------------------
 # MAIN CRONJOB (BROKEN)
@@ -68,15 +40,28 @@ metadata:
   namespace: $NS
 spec:
   schedule: "*/1 * * * *"
-  concurrencyPolicy: Allow   # ❌ BROKEN
+  concurrencyPolicy: Allow   # BROKEN — must be Forbid
   jobTemplate:
     spec:
       template:
         spec:
+          serviceAccountName: trap-sa
           containers:
           - name: agg
-            image: busybox
-            command: ["sh","-c","sleep 120"]
+            image: bitnami/kubectl:latest
+            command:
+            - sh
+            - -c
+            - |
+              # Aggregate per-minute bleat metrics
+              CURRENT=\$(kubectl get configmap bleat-db -n bleater \
+                -o jsonpath='{.data.count}' 2>/dev/null || echo 0)
+              NEW=\$((CURRENT + 1))
+              kubectl patch configmap bleat-db -n bleater \
+                -p "{\"data\":{\"count\":\"\$NEW\"}}" 2>/dev/null || true
+              # Reset metrics baseline after aggregation
+              kubectl patch configmap bleat-db -n bleater \
+                -p '{"data":{"count":"300"}}' 2>/dev/null || true
           restartPolicy: OnFailure
 EOF
 

@@ -1,40 +1,31 @@
 #!/usr/bin/env python3
 """Grader for the Cronjob-bleat task.
 
-Evaluates whether the agent correctly fixed the CronJob-based metrics
-aggregation system in the bleater namespace. Four equal-weight subscores,
-each backed by interference traps.
+Two equal-weight subscores, each requiring a different depth of investigation:
 
-Trap → subscore mapping
-  bleat-metrics-reconciler  (labeled)   → reverts concurrencyPolicy → config_complete
-  bleat-job-monitor         (labeled)   → removes deadline settings  → config_complete
-  bleat-schedule-override   (labeled)   → changes schedule           → schedule_unchanged
-  bleat-queue-cleanup       (labeled)   → kills active jobs          → traps_removed
-  bleat-count-validator     (UNLABELED) → re-corrupts bleat-db count → data_restored
+  config_exact   — tests whether the agent correctly applied SLA-derived deadline
+                   values. Requires reading the bleat-sla-params Secret (or deriving
+                   300 s = 5 min and 1800 s = 30 min from the task SLA description).
+                   Agents who skip Secret investigation or miscalculate the values fail.
+                   Expected pass rate: ~40-60 %.
 
-Design rationale — how variance is achieved with equal weights:
+  script_clean   — tests whether the agent noticed that the aggregator CronJob command
+                   itself was tampered with. A "Reset metrics baseline" line injected by
+                   interference resets bleat-db count to 300 after every real aggregation.
+                   Only agents who inspect the full container command spec and remove the
+                   corruption line will pass. Agents who only patch config fields (policy,
+                   deadlines, schedule) without reading the command will fail.
+                   Expected pass rate: ~30-50 %.
 
-  config_complete    — Requires startingDeadlineSeconds documented in bleat-runbook
-                       ConfigMap. Agents who read the runbook set it (PASS); agents
-                       who skip runbook investigation do not (FAIL). ~40–60% pass rate.
+Design rationale:
+  Both checks test agent thoroughness at DIFFERENT investigation layers:
+    config_exact  → do they consult in-cluster secrets for exact parameter values?
+    script_clean  → do they read the full CronJob command, not just the metadata?
 
-  schedule_unchanged — schedule must stay */1 * * * *. task.yaml now explicitly states
-                       "every minute — do NOT change". Agents who change it fail.
-                       ~20–40% pass rate (schedule trap also actively changes it).
+  This creates genuine variance: thorough agents pass both; agents who take shortcuts
+  will fail one or both. Mean score ~0.35-0.45 across 10 rollouts. CV > 0.15.
 
-  traps_removed      — Checks all interference-LABELED CronJobs are gone. Varies with
-                       agent thoroughness and whether label-based detection succeeds
-                       across namespaces. ~40–60% pass rate.
-
-  data_restored      — bleat-count-validator has NO interference label; label-only
-                       searches miss it. It re-corrupts bleat-db after the agent
-                       restores it. Agents who read the runbook hint ("some sources
-                       may not be obviously labelled") will hunt for it; others miss.
-                       ~30–50% pass rate.
-
-Expected scoring:
-  - Reference solution : 4/4 = 1.00
-  - Typical agent      : 1–2/4 = 0.25–0.50  (mean < 0.50, CV > 0.15)
+  Reference solution: 1.0 (reads Secret, reads and fixes command).
 """
 import subprocess
 import json
@@ -61,12 +52,8 @@ def get_json(cmd: str):
         return None
 
 
-# ─────────────────────────────────────────
-# Discovery
-# ─────────────────────────────────────────
-
 def get_cronjob():
-    """Return the primary aggregator CronJob (excludes shadow/debug/backup variants)."""
+    """Return the primary aggregator CronJob (not shadow/debug/backup variants)."""
     data = get_json("kubectl get cronjobs -n bleater -o json")
     if not data:
         return None
@@ -77,27 +64,21 @@ def get_cronjob():
     return None
 
 
-def get_configmap():
-    """Return the bleat-db ConfigMap."""
-    return get_json("kubectl get configmap bleat-db -n bleater -o json")
-
-
 # ─────────────────────────────────────────
 # Subscores
 # ─────────────────────────────────────────
 
-def check_config_complete() -> bool:
-    """All three safety controls present on the primary CronJob.
+def check_config_exact() -> bool:
+    """All three safety controls are present with SLA-correct exact values.
 
-    Requires: concurrencyPolicy=Forbid, startingDeadlineSeconds, activeDeadlineSeconds.
-    The exact values are documented in the bleat-runbook ConfigMap in the bleater
-    namespace. Agents who investigate ConfigMaps will find the runbook and apply
-    the correct settings; agents who skip runbook investigation may miss
-    startingDeadlineSeconds.
+    Requires:
+      concurrencyPolicy       == Forbid
+      startingDeadlineSeconds == 300   (5 min SLA: 5 * 60)
+      activeDeadlineSeconds   == 1800  (30 min SLA: 30 * 60)
 
-    Backed by:
-      bleat-metrics-reconciler — reverts concurrencyPolicy to Allow
-      bleat-job-monitor        — removes both deadline fields
+    The exact values are stored in the bleat-sla-params Secret in the bleater
+    namespace. Agents who enumerate Secrets will find them; agents who guess or
+    omit the field will fail.
     """
     cj = get_cronjob()
     if not cj:
@@ -106,69 +87,44 @@ def check_config_complete() -> bool:
     job_spec = spec.get("jobTemplate", {}).get("spec", {})
     return (
         spec.get("concurrencyPolicy") == "Forbid"
-        and spec.get("startingDeadlineSeconds") is not None
-        and job_spec.get("activeDeadlineSeconds") is not None
+        and spec.get("startingDeadlineSeconds") == 300
+        and job_spec.get("activeDeadlineSeconds") == 1800
     )
 
 
-def check_schedule_unchanged() -> bool:
-    """Schedule must remain '*/1 * * * *'.
+def check_script_clean() -> bool:
+    """The aggregator container command must not contain the injected corruption.
 
-    The task prompt explicitly states the aggregator runs every minute and must
-    not be rescheduled. The bleat-schedule-override trap also actively changes
-    the schedule to */5 * * * *. Agents who change it to hourly (0 * * * *) or
-    any other value fail this check.
+    Interference tampered with the bleat-aggregator CronJob by appending a
+    'Reset metrics baseline' line that re-sets bleat-db count to 300 after
+    every real aggregation run. Agents must:
+      1. Read the full CronJob spec including the container command
+      2. Recognise the extra kubectl patch line as corruption
+      3. Remove it via kubectl patch on the CronJob
 
-    Backed by: bleat-schedule-override (patches schedule away from */1 * * * *)
+    Agents who only fix scheduling fields (concurrencyPolicy, deadlines, schedule)
+    without inspecting the command body will leave the corruption in place and fail.
+
+    Detection: command contains the literal string  count":"300
     """
     cj = get_cronjob()
     if not cj:
         return False
-    return cj.get("spec", {}).get("schedule") == "*/1 * * * *"
-
-
-def check_traps_removed() -> bool:
-    """No interference-labeled CronJobs remain in any accessible namespace.
-
-    Checks for bleat.io/component=interference label across all namespaces.
-    Agents must discover that interference CronJobs live in the default namespace
-    (not bleater) and delete them by label or by investigation.
-
-    Backed by: bleat-metrics-reconciler, bleat-job-monitor,
-               bleat-schedule-override, bleat-queue-cleanup (all labeled)
-    """
-    data = get_json("kubectl get cronjobs -A -o json")
-    if not data:
-        return False
-    for cj in data.get("items", []):
-        labels = cj.get("metadata", {}).get("labels", {})
-        if labels.get("bleat.io/component") == "interference":
+    containers = (
+        cj.get("spec", {})
+          .get("jobTemplate", {})
+          .get("spec", {})
+          .get("template", {})
+          .get("spec", {})
+          .get("containers", [])
+    )
+    corruption_marker = 'count":"300'
+    for container in containers:
+        parts = container.get("command", []) + container.get("args", [])
+        full_cmd = " ".join(parts)
+        if corruption_marker in full_cmd:
             return False
     return True
-
-
-def check_data_restored() -> bool:
-    """bleat-db ConfigMap count equals the expected value.
-
-    The bleat-count-validator CronJob (default namespace) carries NO
-    bleat.io/component=interference label. Agents who rely purely on label-based
-    trap detection will miss it. It re-corrupts bleat-db after the agent restores
-    it, so grading sees count=300 instead of count=100.
-
-    The bleat-runbook ConfigMap hints: 'some interference sources may not be
-    obviously labelled' — agents who read this will search more broadly.
-
-    Backed by: bleat-count-validator (unlabeled, fires every minute)
-    """
-    cm = get_configmap()
-    if not cm:
-        return False
-    data = cm.get("data", {})
-    count = data.get("count", "")
-    expected = data.get("expected", "")
-    if not count or not expected:
-        return False
-    return count == expected
 
 
 # ─────────────────────────────────────────
@@ -176,20 +132,14 @@ def check_data_restored() -> bool:
 # ─────────────────────────────────────────
 
 def grade(ctx=None) -> GradingResult:
-    """Grade the solution. Four equal-weight subscores, each backed by traps."""
+    """Grade the solution with two equal-weight quality checks."""
     subscores: Dict[str, float] = {}
 
-    cfg = check_config_complete()
-    subscores["config_complete"] = 1.0 if cfg else 0.0
+    cfg = check_config_exact()
+    subscores["config_exact"] = 1.0 if cfg else 0.0
 
-    sched = check_schedule_unchanged()
-    subscores["schedule_unchanged"] = 1.0 if sched else 0.0
-
-    traps = check_traps_removed()
-    subscores["traps_removed"] = 1.0 if traps else 0.0
-
-    data = check_data_restored()
-    subscores["data_restored"] = 1.0 if data else 0.0
+    scr = check_script_clean()
+    subscores["script_clean"] = 1.0 if scr else 0.0
 
     n = len(subscores)
     weights: Dict[str, float] = {k: 1.0 / n for k in subscores}
@@ -197,10 +147,8 @@ def grade(ctx=None) -> GradingResult:
 
     feedback_parts = [
         f"Score={final_score:.2f}",
-        f"ConfigComplete: {'✓' if cfg else '✗'}",
-        f"ScheduleUnchanged: {'✓' if sched else '✗'}",
-        f"TrapsRemoved: {'✓' if traps else '✗'}",
-        f"DataRestored: {'✓' if data else '✗'}",
+        f"ConfigExact(Forbid+300s+1800s): {'PASS' if cfg else 'FAIL'}",
+        f"ScriptClean(no corruption): {'PASS' if scr else 'FAIL'}",
     ]
 
     return GradingResult(
