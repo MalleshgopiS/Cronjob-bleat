@@ -3,26 +3,38 @@
 
 Evaluates whether the agent correctly fixed the CronJob-based metrics
 aggregation system in the bleater namespace. Four equal-weight subscores,
-each backed by one or more interference traps.
+each backed by interference traps.
 
 Trap → subscore mapping
-  bleat-metrics-reconciler   (reverts concurrencyPolicy)   → config_complete
-  bleat-job-monitor          (removes deadlines)            → config_complete
-  bleat-schedule-override    (changes schedule)             → schedule_unchanged
-  bleat-queue-cleanup        (kills running jobs)           → traps_removed
-  bleat-count-validator      (corrupts count, labeled)      → data_restored
-  bleat-aggregator-shadow    (corrupts count, NO label)     → data_restored
+  bleat-metrics-reconciler  (labeled)   → reverts concurrencyPolicy → config_complete
+  bleat-job-monitor         (labeled)   → removes deadline settings  → config_complete
+  bleat-schedule-override   (labeled)   → changes schedule           → schedule_unchanged
+  bleat-queue-cleanup       (labeled)   → kills active jobs          → traps_removed
+  bleat-count-validator     (UNLABELED) → re-corrupts bleat-db count → data_restored
+
+Design rationale — how variance is achieved with equal weights:
+
+  config_complete    — Requires startingDeadlineSeconds documented in bleat-runbook
+                       ConfigMap. Agents who read the runbook set it (PASS); agents
+                       who skip runbook investigation do not (FAIL). ~40–60% pass rate.
+
+  schedule_unchanged — schedule must stay */1 * * * *. task.yaml now explicitly states
+                       "every minute — do NOT change". Agents who change it fail.
+                       ~20–40% pass rate (schedule trap also actively changes it).
+
+  traps_removed      — Checks all interference-LABELED CronJobs are gone. Varies with
+                       agent thoroughness and whether label-based detection succeeds
+                       across namespaces. ~40–60% pass rate.
+
+  data_restored      — bleat-count-validator has NO interference label; label-only
+                       searches miss it. It re-corrupts bleat-db after the agent
+                       restores it. Agents who read the runbook hint ("some sources
+                       may not be obviously labelled") will hunt for it; others miss.
+                       ~30–50% pass rate.
 
 Expected scoring:
   - Reference solution : 4/4 = 1.00
-  - Typical agent      : ~1–2/4 = 0.25–0.50  (mean < 0.50, CV > 0.15)
-
-Agent failure profile:
-  config_complete    — ALWAYS FAILS  (agents never set startingDeadlineSeconds)
-  schedule_unchanged — ALWAYS FAILS  (agents change schedule to 0 * * * *)
-  traps_removed      — ALWAYS PASSES (agents find labeled traps by label)
-  data_restored      — VARIES        (depends on whether agent discovers the
-                                      unlabeled shadow trap in bleater ns)
+  - Typical agent      : 1–2/4 = 0.25–0.50  (mean < 0.50, CV > 0.15)
 """
 import subprocess
 import json
@@ -75,10 +87,17 @@ def get_configmap():
 # ─────────────────────────────────────────
 
 def check_config_complete() -> bool:
-    """All three safety controls present: concurrencyPolicy=Forbid,
-    startingDeadlineSeconds, and activeDeadlineSeconds.
-    Backed by: bleat-metrics-reconciler (reverts concurrencyPolicy) and
-               bleat-job-monitor (removes deadline settings).
+    """All three safety controls present on the primary CronJob.
+
+    Requires: concurrencyPolicy=Forbid, startingDeadlineSeconds, activeDeadlineSeconds.
+    The exact values are documented in the bleat-runbook ConfigMap in the bleater
+    namespace. Agents who investigate ConfigMaps will find the runbook and apply
+    the correct settings; agents who skip runbook investigation may miss
+    startingDeadlineSeconds.
+
+    Backed by:
+      bleat-metrics-reconciler — reverts concurrencyPolicy to Allow
+      bleat-job-monitor        — removes both deadline fields
     """
     cj = get_cronjob()
     if not cj:
@@ -93,8 +112,14 @@ def check_config_complete() -> bool:
 
 
 def check_schedule_unchanged() -> bool:
-    """Schedule must remain '*/1 * * * *' — not changed by agent or trap.
-    Backed by: bleat-schedule-override (patches schedule to */5 * * * *).
+    """Schedule must remain '*/1 * * * *'.
+
+    The task prompt explicitly states the aggregator runs every minute and must
+    not be rescheduled. The bleat-schedule-override trap also actively changes
+    the schedule to */5 * * * *. Agents who change it to hourly (0 * * * *) or
+    any other value fail this check.
+
+    Backed by: bleat-schedule-override (patches schedule away from */1 * * * *)
     """
     cj = get_cronjob()
     if not cj:
@@ -103,8 +128,14 @@ def check_schedule_unchanged() -> bool:
 
 
 def check_traps_removed() -> bool:
-    """No interference-labeled CronJobs remain in any namespace.
-    Backed by: bleat-queue-cleanup and all other labeled interference CronJobs.
+    """No interference-labeled CronJobs remain in any accessible namespace.
+
+    Checks for bleat.io/component=interference label across all namespaces.
+    Agents must discover that interference CronJobs live in the default namespace
+    (not bleater) and delete them by label or by investigation.
+
+    Backed by: bleat-metrics-reconciler, bleat-job-monitor,
+               bleat-schedule-override, bleat-queue-cleanup (all labeled)
     """
     data = get_json("kubectl get cronjobs -A -o json")
     if not data:
@@ -117,11 +148,17 @@ def check_traps_removed() -> bool:
 
 
 def check_data_restored() -> bool:
-    """bleat-db count matches expected value.
-    Backed by: bleat-count-validator (labeled, resets count to 300) and
-               bleat-aggregator-shadow (unlabeled, also resets count to 300).
-    Agents that only use label-based detection will miss the shadow trap,
-    leaving it free to re-corrupt data after the agent restores it.
+    """bleat-db ConfigMap count equals the expected value.
+
+    The bleat-count-validator CronJob (default namespace) carries NO
+    bleat.io/component=interference label. Agents who rely purely on label-based
+    trap detection will miss it. It re-corrupts bleat-db after the agent restores
+    it, so grading sees count=300 instead of count=100.
+
+    The bleat-runbook ConfigMap hints: 'some interference sources may not be
+    obviously labelled' — agents who read this will search more broadly.
+
+    Backed by: bleat-count-validator (unlabeled, fires every minute)
     """
     cm = get_configmap()
     if not cm:

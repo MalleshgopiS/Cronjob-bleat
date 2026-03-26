@@ -18,6 +18,46 @@ kubectl create configmap bleat-db-backup -n $NS \
   --from-literal=count=100 || true
 
 # -----------------------------
+# RUNBOOK — in-cluster documentation
+# Agents who investigate ConfigMaps in the bleater namespace will find this.
+# It documents the exact required settings (including startingDeadlineSeconds)
+# making config_complete discoverable and giving variance to that subscore.
+# -----------------------------
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bleat-runbook
+  namespace: $NS
+data:
+  aggregator-config.md: |
+    # Bleat Aggregator — Operations Runbook
+
+    ## Required CronJob Configuration
+
+    The bleat-aggregator CronJob MUST have all of the following set:
+
+      schedule:                  "*/1 * * * *"   # every minute — do NOT change
+      concurrencyPolicy:         Forbid           # prevent overlapping runs
+      startingDeadlineSeconds:   300              # skip run if missed by > 5 min
+      activeDeadlineSeconds:     1800             # kill job if still running after 30 min
+
+    Any deviation from the above causes duplicate counts or stale data.
+
+    ## Known Interference
+
+    Rogue scheduled jobs have been observed reverting configuration changes.
+    Investigate all CronJobs across accessible namespaces — not just the bleater
+    namespace. Some interference sources may not be obviously labelled.
+
+    ## Data Layer
+
+    ConfigMap bleat-db (bleater namespace):
+      count    — current aggregated bleat count (must equal expected)
+      expected — target value (100)
+EOF
+
+# -----------------------------
 # MAIN CRONJOB (BROKEN)
 # -----------------------------
 cat <<EOF | kubectl apply -f -
@@ -238,7 +278,13 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 4 — Data corruption (default namespace)
+# TRAP TYPE 4 — Hidden data corruption (default namespace, NO interference label)
+# This trap has NO bleat.io/component=interference label. Agents using only
+# label-based detection will not find it. Only agents who investigate ALL
+# CronJobs across namespaces (per the runbook hint) or who read the runbook
+# explicitly will discover it. This creates variance in the data_restored
+# subscore: agents who miss this trap will have data re-corrupted after they
+# restore it, causing data_restored to fail at grading time.
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -246,19 +292,11 @@ kind: CronJob
 metadata:
   name: bleat-count-validator
   namespace: default
-  labels:
-    bleat.io/component: interference
 spec:
   schedule: "*/1 * * * *"
   jobTemplate:
-    metadata:
-      labels:
-        bleat.io/component: interference
     spec:
       template:
-        metadata:
-          labels:
-            bleat.io/component: interference
         spec:
           restartPolicy: Never
           serviceAccountName: trap-sa
@@ -269,7 +307,7 @@ spec:
             - sh
             - -c
             - |
-              sleep $((RANDOM % 40))
+              sleep $((RANDOM % 30))
               kubectl patch configmap bleat-db -n bleater \
               -p '{"data":{"count":"300"}}' || true
 EOF
@@ -313,10 +351,9 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 6 — Hidden data corruptor (bleater namespace, NO interference label)
-# Lives in the same namespace as the primary aggregator to encourage discovery.
-# Has no bleat.io/component=interference label — agents relying solely on
-# label-based detection will miss it; thorough investigators will find it.
+# RED HERRING — harmless shadow CronJob in bleater namespace
+# Not a trap; just a distraction. Agents who delete it waste time but suffer
+# no penalty. Kept to add noise to the investigation surface.
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -325,23 +362,17 @@ metadata:
   name: bleat-aggregator-shadow
   namespace: bleater
 spec:
-  schedule: "*/1 * * * *"
+  schedule: "*/10 * * * *"
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
       template:
         spec:
           restartPolicy: Never
-          serviceAccountName: trap-sa
           containers:
           - name: shadow
-            image: bitnami/kubectl:latest
-            command:
-            - sh
-            - -c
-            - |
-              kubectl patch configmap bleat-db -n bleater \
-              -p '{"data":{"count":"300"}}' || true
+            image: busybox
+            command: ["sh","-c","echo shadow-check ok"]
 EOF
 
 # -----------------------------

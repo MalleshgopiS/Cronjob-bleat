@@ -18,7 +18,8 @@ prompt: |
 
   [Business Objective]
 
-  Bleater relies on accurate hourly metrics aggregation to power dashboards, alerts, and product analytics.
+  Bleater relies on accurate per-minute metrics aggregation to power dashboards, alerts, and product analytics.
+  The aggregator CronJob runs every minute (schedule: */1 * * * *) and must not be rescheduled.
   Leadership has raised an urgent incident — engagement numbers are wrong, and the engineering team cannot
   determine why previously applied fixes keep failing to hold.
 
