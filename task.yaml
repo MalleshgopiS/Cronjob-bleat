@@ -18,8 +18,7 @@ prompt: |
 
   [Business Objective]
 
-  Bleater relies on accurate per-minute metrics aggregation to power dashboards, alerts, and product analytics.
-  The aggregator CronJob runs every minute (schedule: */1 * * * *) and must not be rescheduled.
+  Bleater relies on accurate hourly metrics aggregation to power dashboards, alerts, and product analytics.
   Leadership has raised an urgent incident — engagement numbers are wrong, and the engineering team cannot
   determine why previously applied fixes keep failing to hold.
 
@@ -31,28 +30,14 @@ prompt: |
   - Fixes applied to the system do not seem to persist — the system reverts to a broken state on its own
 
   Investigate the platform's scheduled jobs and data pipeline. Something in the environment is not behaving
-  as expected.
-
-  [SLA Requirements]
-
-  The aggregation system must comply with the following operational SLAs:
-  - Jobs must start within 5 minutes of their scheduled time or be skipped
-  - Each job run must complete within 30 minutes or be forcibly terminated
-
-  These requirements must be enforced at the CronJob level using the appropriate Kubernetes fields.
-  The exact parameter values for these SLAs are documented in the in-cluster secrets for this namespace.
+  as expected. You may find useful context in the Gitea wiki, your email, or the internal chat.
 
   [Goal]
 
   Restore the metrics aggregation system to reliable operation.
 
-  The system is considered healthy when:
-  - Bleat counts are accurate and non-duplicated
-  - The fix remains stable under continued system operation
-  - All pipeline computation logic is intact and producing correct results
-
-  Tip: verify not just the CronJob configuration but also that the aggregation computation itself
-  has not been tampered with. Rogue actors may have modified pipeline logic, not just scheduling config.
+  The system is considered healthy when bleat counts are accurate and non-duplicated,
+  and the fix remains stable under continued system operation.
 
   [Constraints]
 

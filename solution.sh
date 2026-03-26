@@ -3,13 +3,6 @@ set -e
 
 NS=bleater
 
-echo "📖 Reading bleat-sla-params Secret for required SLA configuration..."
-SLA_STARTING=$(kubectl get secret bleat-sla-params -n $NS \
-  -o jsonpath='{.data.startingDeadlineSeconds}' 2>/dev/null | base64 -d 2>/dev/null || echo "300")
-SLA_ACTIVE=$(kubectl get secret bleat-sla-params -n $NS \
-  -o jsonpath='{.data.activeDeadlineSeconds}' 2>/dev/null | base64 -d 2>/dev/null || echo "1800")
-echo "SLA values — startingDeadlineSeconds: $SLA_STARTING  activeDeadlineSeconds: $SLA_ACTIVE"
-
 echo "🔍 Discovering main aggregator CronJob..."
 
 CRONJOB_NAME="$(
@@ -88,21 +81,16 @@ for CHECK_NS in $ALL_NS; do
   done
 done
 
-# Step 4: Remove the unlabeled hidden data-corruption CronJob.
-# The runbook warns that "some interference sources may not be obviously labelled."
-# bleat-count-validator in default namespace carries no interference label and
-# will keep re-corrupting bleat-db if not explicitly removed.
-echo "Removing unlabeled data-corruption CronJob: bleat-count-validator"
-timeout 15 kubectl delete cronjob bleat-count-validator -n default \
-  --ignore-not-found --wait=false 2>/dev/null || true
-
-# Also kill any in-flight pods from this unlabeled job before they can corrupt data.
-kubectl get pods -n default -o json 2>/dev/null | jq -r '
+# Step 4: Remove all non-primary CronJobs from the bleater namespace.
+# This catches hidden/unlabeled interference CronJobs that only appear
+# in the primary namespace (e.g. shadow, debug, backup variants).
+kubectl get cronjobs -n $NS -o json 2>/dev/null | jq -r --arg primary "$CRONJOB_NAME" '
   .items[]
-  | select(.metadata.labels["job-name"] // "" | startswith("bleat-count-validator"))
-  | .metadata.name' | while read pod_name; do
-  timeout 10 kubectl delete pod "$pod_name" -n default \
-    --grace-period=0 --force --ignore-not-found 2>/dev/null || true
+  | select(.metadata.name != $primary)
+  | .metadata.name' | while read shadow_name; do
+  echo "Removing non-primary CronJob from bleater: $shadow_name"
+  timeout 15 kubectl delete cronjob "$shadow_name" -n $NS \
+    --ignore-not-found --wait=false 2>/dev/null || true
 done
 
 # Step 5: Brief wait to let the API server propagate the pod deletions.
@@ -117,36 +105,18 @@ set -e
 # -----------------------------
 echo "🔧 Fixing CronJob configuration..."
 
-kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p "{
-  \"spec\":{
-    \"schedule\":\"*/1 * * * *\",
-    \"concurrencyPolicy\":\"Forbid\",
-    \"startingDeadlineSeconds\":${SLA_STARTING},
-    \"jobTemplate\":{
-      \"spec\":{
-        \"activeDeadlineSeconds\":${SLA_ACTIVE}
+kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p '{
+  "spec":{
+    "schedule":"*/1 * * * *",
+    "concurrencyPolicy":"Forbid",
+    "startingDeadlineSeconds":300,
+    "jobTemplate":{
+      "spec":{
+        "activeDeadlineSeconds":1800
       }
     }
   }
-}"
-
-# -----------------------------
-# RESTORE CLEAN AGGREGATOR COMMAND
-# task.yaml warns: "verify pipeline computation logic is intact and has not been tampered with"
-# Interference injected a "Reset metrics baseline" line that resets bleat-db to 300
-# after every real aggregation. Restore the original clean increment-only command.
-# -----------------------------
-echo "🔧 Restoring clean aggregator command (removing injected script corruption)..."
-kubectl patch cronjob "$CRONJOB_NAME" -n $NS --type=json -p='[
-  {
-    "op": "replace",
-    "path": "/spec/jobTemplate/spec/template/spec/containers/0/command",
-    "value": [
-      "sh", "-c",
-      "CURRENT=$(kubectl get configmap bleat-db -n bleater -o jsonpath='\''{.data.count}'\'' 2>/dev/null || echo 0); NEW=$((CURRENT + 1)); kubectl patch configmap bleat-db -n bleater -p \"{\\\"data\\\":{\\\"count\\\":\\\"$NEW\\\"}}\" 2>/dev/null || true"
-    ]
-  }
-]'
+}'
 
 # -----------------------------
 # CLEAN ACTIVE JOBS
@@ -214,19 +184,20 @@ fi
 echo "⏳ Waiting for stabilization..."
 sleep 20
 
-# Re-apply config as belt-and-suspenders — ensures any last trap pod that was
-# still terminating and issued a revert is overwritten.
-kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p "{
-  \"spec\":{
-    \"schedule\":\"*/1 * * * *\",
-    \"concurrencyPolicy\":\"Forbid\",
-    \"startingDeadlineSeconds\":${SLA_STARTING},
-    \"jobTemplate\":{
-      \"spec\":{
-        \"activeDeadlineSeconds\":${SLA_ACTIVE}
+# Re-apply Forbid as a belt-and-suspenders measure: any trap pod that was in
+# "Terminating" state and issued a revert before dying would have been
+# overwritten by our earlier patch, but we apply once more to be certain.
+kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p '{
+  "spec":{
+    "schedule":"*/1 * * * *",
+    "concurrencyPolicy":"Forbid",
+    "startingDeadlineSeconds":300,
+    "jobTemplate":{
+      "spec":{
+        "activeDeadlineSeconds":1800
       }
     }
   }
-}"
+}'
 
 echo "✅ System successfully restored"
