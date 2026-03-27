@@ -18,8 +18,7 @@ prompt: |
 
   [Business Objective]
 
-  Bleater relies on accurate per-minute metrics aggregation to power dashboards, alerts, and product analytics.
-  The aggregator CronJob runs every minute (schedule: */1 * * * *) and must not be rescheduled.
+  Bleater relies on accurate hourly metrics aggregation to power dashboards, alerts, and product analytics.
   Leadership has raised an urgent incident — engagement numbers are wrong, and the engineering team cannot
   determine why previously applied fixes keep failing to hold.
 
@@ -33,23 +32,12 @@ prompt: |
   Investigate the platform's scheduled jobs and data pipeline. Something in the environment is not behaving
   as expected. You may find useful context in the Gitea wiki, your email, or the internal chat.
 
-  [SLA Requirements]
-
-  The aggregation system must comply with the following operational SLAs:
-  - Jobs must start within 5 minutes of their scheduled time or be skipped
-    (enforce via the CronJob's startingDeadlineSeconds field)
-  - Each job run must complete within 30 minutes or be forcibly terminated
-    (enforce via activeDeadlineSeconds on the job template)
-
   [Goal]
 
   Restore the metrics aggregation system to reliable operation.
 
   The system is considered healthy when bleat counts are accurate and non-duplicated,
   and the fix remains stable under continued system operation.
-
-  Tip: verify not just the CronJob configuration fields but also that the aggregation
-  computation itself has not been tampered with.
 
   [Constraints]
 
