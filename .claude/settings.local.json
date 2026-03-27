@@ -18,7 +18,9 @@
       "Bash(apex-arena test-solution:*)",
       "Bash(wc -l \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout0.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout1.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout2.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout3.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout4.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout5.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout6.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout7.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout8.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout9.txt\")",
       "Bash(tail -300 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout0.txt\")",
-      "Bash(tail -300 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout2.txt\")"
+      "Bash(tail -300 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout2.txt\")",
+      "Bash(sed -n '121,160p' \"C:\\\\Users\\\\malle\\\\Desktop\\\\Bespoke documents\\\\Pod 3 task\\\\Inprogress\\\\Cronjob-bleat\\\\solution.sh\")",
+      "Bash(sed -n '127,167p' \"C:\\\\Users\\\\malle\\\\Desktop\\\\Bespoke documents\\\\Pod 3 task\\\\Inprogress\\\\Cronjob-bleat\\\\grader.py\")"
     ]
   }
 }

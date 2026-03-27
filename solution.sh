@@ -123,14 +123,37 @@ kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p '{
 # The aggregator command was corrupted with a reset-to-300 line.
 # Restore it to real count-increment logic so the pipeline functions correctly.
 # (task.yaml Goal: "real aggregation logic — not a placeholder command")
+# Use Python to build the JSON patch — avoids shell-escaping issues with
+# complex command strings containing quotes and braces.
 # -----------------------------
 echo "🔧 Restoring aggregator computation logic..."
 
-CLEAN_CMD='CURRENT=$(kubectl get configmap bleat-db -n bleater -o jsonpath='\''{.data.count}'\'' 2>/dev/null || echo 0); NEW=$((CURRENT + 1)); kubectl patch configmap bleat-db -n bleater -p "{\"data\":{\"count\":\"$NEW\"}}" 2>/dev/null || true'
+# Write clean command to temp file (single-quoted heredoc = no expansion)
+cat > /tmp/agg_clean_cmd.txt << 'CMDEOF'
+CURRENT=$(kubectl get configmap bleat-db -n bleater -o jsonpath='{.data.count}' 2>/dev/null || echo 0)
+NEW=$((CURRENT + 1))
+kubectl patch configmap bleat-db -n bleater -p "{\"data\":{\"count\":\"$NEW\"}}" 2>/dev/null || true
+CMDEOF
 
-kubectl patch cronjob "$CRONJOB_NAME" -n $NS --type=json \
-  -p="[{\"op\":\"replace\",\"path\":\"/spec/jobTemplate/spec/template/spec/containers/0/image\",\"value\":\"bitnami/kubectl:latest\"},{\"op\":\"replace\",\"path\":\"/spec/jobTemplate/spec/template/spec/containers/0/command\",\"value\":[\"sh\",\"-c\",\"$CLEAN_CMD\"]}]" \
-  2>/dev/null || true
+# Python builds and applies the JSON patch cleanly
+python3 -c "
+import subprocess, json, sys
+cmd_text = open('/tmp/agg_clean_cmd.txt').read().rstrip()
+patch = json.dumps([
+    {'op': 'replace',
+     'path': '/spec/jobTemplate/spec/template/spec/containers/0/image',
+     'value': 'bitnami/kubectl:latest'},
+    {'op': 'replace',
+     'path': '/spec/jobTemplate/spec/template/spec/containers/0/command',
+     'value': ['sh', '-c', cmd_text]}
+])
+r = subprocess.run(
+    ['kubectl', 'patch', 'cronjob', sys.argv[1], '-n', sys.argv[2],
+     '--type=json', '-p=' + patch],
+    capture_output=True, text=True)
+print(r.stdout or r.stderr)
+sys.exit(r.returncode)
+" "$CRONJOB_NAME" "$NS"
 
 # -----------------------------
 # CLEAN ACTIVE JOBS
