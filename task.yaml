@@ -18,7 +18,7 @@ prompt: |
 
   [Business Objective]
 
-  Bleater relies on accurate hourly metrics aggregation to power dashboards, alerts, and product analytics.
+  Bleater relies on accurate per-minute metrics aggregation to power dashboards, alerts, and product analytics.
   Leadership has raised an urgent incident — engagement numbers are wrong, and the engineering team cannot
   determine why previously applied fixes keep failing to hold.
 
@@ -32,17 +32,26 @@ prompt: |
   Investigate the platform's scheduled jobs and data pipeline. Something in the environment is not behaving
   as expected. You may find useful context in the Gitea wiki, your email, or the internal chat.
 
+  [SLA Requirements]
+
+  The aggregation system must comply with the following operational SLAs:
+  - Jobs that cannot start within 5 minutes of their scheduled time must be automatically skipped
+  - Individual job runs must be bounded — a maximum wall-clock run time must be enforced
+
   [Goal]
 
   Restore the metrics aggregation system to reliable operation.
 
-  The system is considered healthy when bleat counts are accurate and non-duplicated,
-  and the fix remains stable under continued system operation.
+  The system is considered healthy when:
+  - The bleat count pipeline runs correctly (real aggregation logic — not a placeholder command)
+  - Bleat counts are accurate, non-duplicated, and self-healing
+  - The fix remains stable under continued system operation
 
   [Constraints]
 
   - Investigate and fix the existing system; do not recreate it
   - Do not delete the primary aggregation CronJob
+  - Do not change the aggregation schedule — the per-minute cadence is required
   - Ensure your changes remain durable under continued system operation
 
 metadata:

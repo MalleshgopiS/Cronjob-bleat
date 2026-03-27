@@ -1,28 +1,22 @@
 #!/usr/bin/env python3
 """Grader for the Cronjob-bleat task.
 
-Evaluates whether the agent correctly fixed the CronJob-based metrics
-aggregation system in the bleater namespace. Four equal-weight subscores,
-each backed by one or more interference traps.
+Evaluates whether the agent correctly restored the CronJob-based metrics
+aggregation system in the bleater namespace.
 
-Trap → subscore mapping
-  bleat-metrics-reconciler   (reverts concurrencyPolicy)   → config_complete
-  bleat-job-monitor          (removes deadlines)            → config_complete
-  bleat-schedule-override    (changes schedule)             → schedule_unchanged
-  bleat-queue-cleanup        (kills running jobs)           → traps_removed
-  bleat-count-validator      (corrupts count, labeled)      → data_restored
-  bleat-aggregator-shadow    (corrupts count, NO label)     → data_restored
+Four equal-weight subscores, each backed by one or more interference traps:
+
+  Trap → subscore mapping
+    bleat-metrics-reconciler  (reverts concurrencyPolicy)        → config_complete
+    bleat-job-monitor         (removes deadline settings)        → config_complete
+    bleat-schedule-override   (changes schedule)                 → schedule_unchanged
+    bleat-queue-cleanup       (kills running jobs)               → traps_removed
+    bleat-count-validator     (corrupts count data)              → traps_removed
+    aggregator script         (injected reset-to-300 corruption) → aggregator_functional
 
 Expected scoring:
   - Reference solution : 4/4 = 1.00
-  - Typical agent      : ~1–2/4 = 0.25–0.50  (mean < 0.50, CV > 0.15)
-
-Agent failure profile:
-  config_complete    — ALWAYS FAILS  (agents never set startingDeadlineSeconds)
-  schedule_unchanged — ALWAYS FAILS  (agents change schedule to 0 * * * *)
-  traps_removed      — ALWAYS PASSES (agents find labeled traps by label)
-  data_restored      — VARIES        (depends on whether agent discovers the
-                                      unlabeled shadow trap in bleater ns)
+  - Typical agent      : 1–3/4  (mean target < 0.50, CV target > 0.15)
 """
 import subprocess
 import json
@@ -75,10 +69,19 @@ def get_configmap():
 # ─────────────────────────────────────────
 
 def check_config_complete() -> bool:
-    """All three safety controls present: concurrencyPolicy=Forbid,
+    """Three safety controls all present: concurrencyPolicy=Forbid,
     startingDeadlineSeconds, and activeDeadlineSeconds.
-    Backed by: bleat-metrics-reconciler (reverts concurrencyPolicy) and
-               bleat-job-monitor (removes deadline settings).
+
+    Backed by:
+      - bleat-metrics-reconciler: reverts concurrencyPolicy to Allow
+      - bleat-job-monitor: strips startingDeadlineSeconds and activeDeadlineSeconds
+
+    Discoverable via:
+      - Symptom "counts doubled during high traffic" → concurrencyPolicy=Forbid
+      - task.yaml SLA: "jobs not starting within 5 min must be skipped"
+        → startingDeadlineSeconds
+      - task.yaml SLA: "max wall-clock run time must be enforced"
+        → activeDeadlineSeconds
     """
     cj = get_cronjob()
     if not cj:
@@ -93,8 +96,11 @@ def check_config_complete() -> bool:
 
 
 def check_schedule_unchanged() -> bool:
-    """Schedule must remain '*/1 * * * *' — not changed by agent or trap.
-    Backed by: bleat-schedule-override (patches schedule to */5 * * * *).
+    """Schedule must remain '*/1 * * * *' — per-minute cadence must not be altered.
+
+    Backed by: bleat-schedule-override (patches schedule away from */1 * * * *).
+    Discoverable via: task.yaml Constraint "do not change the aggregation schedule —
+    the per-minute cadence is required".
     """
     cj = get_cronjob()
     if not cj:
@@ -103,8 +109,10 @@ def check_schedule_unchanged() -> bool:
 
 
 def check_traps_removed() -> bool:
-    """No interference-labeled CronJobs remain in any namespace.
-    Backed by: bleat-queue-cleanup and all other labeled interference CronJobs.
+    """No interference-labeled CronJobs remain in any accessible namespace.
+
+    Backed by: bleat-queue-cleanup, bleat-count-validator, and all other
+    CronJobs carrying the label bleat.io/component=interference.
     """
     data = get_json("kubectl get cronjobs -A -o json")
     if not data:
@@ -116,22 +124,44 @@ def check_traps_removed() -> bool:
     return True
 
 
-def check_data_restored() -> bool:
-    """bleat-db count matches expected value.
-    Backed by: bleat-count-validator (labeled, resets count to 300) and
-               bleat-aggregator-shadow (unlabeled, also resets count to 300).
-    Agents that only use label-based detection will miss the shadow trap,
-    leaving it free to re-corrupt data after the agent restores it.
+def check_aggregator_functional() -> bool:
+    """Aggregator command contains real count-update logic, not a placeholder.
+
+    Setup injected a corruption that (a) resets count to 300 after every run
+    and (b) replaced the original command with a stub. Agents must restore an
+    aggregator that reads the current count from bleat-db, increments it, and
+    writes it back — not just echo a message or sleep.
+
+    Backed by: injected corruption in setup.sh that patches the aggregator
+    CronJob command to include a reset-to-300 line.
+
+    Discoverable via: task.yaml Goal "real aggregation logic — not a placeholder
+    command" and the visible broken command in the CronJob spec.
     """
-    cm = get_configmap()
-    if not cm:
+    cj = get_cronjob()
+    if not cj:
         return False
-    data = cm.get("data", {})
-    count = data.get("count", "")
-    expected = data.get("expected", "")
-    if not count or not expected:
-        return False
-    return count == expected
+    containers = (
+        cj.get("spec", {})
+          .get("jobTemplate", {})
+          .get("spec", {})
+          .get("template", {})
+          .get("spec", {})
+          .get("containers", [])
+    )
+    for container in containers:
+        parts = container.get("command", []) + container.get("args", [])
+        full_cmd = " ".join(parts)
+        # Must contain actual ConfigMap write logic (count increment)
+        has_update = (
+            "kubectl patch configmap bleat-db" in full_cmd
+            or "kubectl patch cm bleat-db" in full_cmd
+        )
+        # Must NOT still contain the injected reset-to-300 corruption line
+        has_corruption = 'count":"300' in full_cmd
+        if has_update and not has_corruption:
+            return True
+    return False
 
 
 # ─────────────────────────────────────────
@@ -151,8 +181,8 @@ def grade(ctx=None) -> GradingResult:
     traps = check_traps_removed()
     subscores["traps_removed"] = 1.0 if traps else 0.0
 
-    data = check_data_restored()
-    subscores["data_restored"] = 1.0 if data else 0.0
+    agg = check_aggregator_functional()
+    subscores["aggregator_functional"] = 1.0 if agg else 0.0
 
     n = len(subscores)
     weights: Dict[str, float] = {k: 1.0 / n for k in subscores}
@@ -163,7 +193,7 @@ def grade(ctx=None) -> GradingResult:
         f"ConfigComplete: {'✓' if cfg else '✗'}",
         f"ScheduleUnchanged: {'✓' if sched else '✗'}",
         f"TrapsRemoved: {'✓' if traps else '✗'}",
-        f"DataRestored: {'✓' if data else '✗'}",
+        f"AggregatorFunctional: {'✓' if agg else '✗'}",
     ]
 
     return GradingResult(
