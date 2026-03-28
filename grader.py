@@ -152,10 +152,14 @@ def check_aggregator_functional() -> bool:
     for container in containers:
         parts = container.get("command", []) + container.get("args", [])
         full_cmd = " ".join(parts)
-        # Must contain actual ConfigMap write logic (count increment)
+        # Must contain actual ConfigMap write logic — accept any valid method:
+        # kubectl, direct K8s API (wget/curl), or Python client targeting bleat-db.
         has_update = (
             "kubectl patch configmap bleat-db" in full_cmd
             or "kubectl patch cm bleat-db" in full_cmd
+            or "kubectl apply" in full_cmd
+            or "/configmaps/bleat-db" in full_cmd   # K8s REST API URL
+            or "configmap/bleat-db" in full_cmd
         )
         # Must NOT still contain the injected reset-to-300 corruption line
         has_corruption = 'count":"300' in full_cmd

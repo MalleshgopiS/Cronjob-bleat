@@ -32,12 +32,6 @@ prompt: |
   Investigate the platform's scheduled jobs and data pipeline. Something in the environment is not behaving
   as expected. You may find useful context in the Gitea wiki, your email, or the internal chat.
 
-  [SLA Requirements]
-
-  The aggregation system must comply with the following operational SLAs:
-  - Jobs that cannot start within 5 minutes of their scheduled time must be automatically skipped
-  - Individual job runs must be bounded — a maximum wall-clock run time must be enforced
-
   [Goal]
 
   Restore the metrics aggregation system to reliable operation.
@@ -47,11 +41,13 @@ prompt: |
   - Bleat counts are accurate, non-duplicated, and self-healing
   - The fix remains stable under continued system operation
 
+  Operational SLA requirements and configuration specifications for this system are
+  documented in the cluster. Check the `bleater` namespace for the system runbook.
+
   [Constraints]
 
   - Investigate and fix the existing system; do not recreate it
   - Do not delete the primary aggregation CronJob
-  - Do not change the aggregation schedule — the per-minute cadence is required
   - Ensure your changes remain durable under continued system operation
 
 metadata:

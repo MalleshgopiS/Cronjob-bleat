@@ -20,7 +20,13 @@
       "Bash(tail -300 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout0.txt\")",
       "Bash(tail -300 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(1\\)\\\\rollout2.txt\")",
       "Bash(sed -n '121,160p' \"C:\\\\Users\\\\malle\\\\Desktop\\\\Bespoke documents\\\\Pod 3 task\\\\Inprogress\\\\Cronjob-bleat\\\\solution.sh\")",
-      "Bash(sed -n '127,167p' \"C:\\\\Users\\\\malle\\\\Desktop\\\\Bespoke documents\\\\Pod 3 task\\\\Inprogress\\\\Cronjob-bleat\\\\grader.py\")"
+      "Bash(sed -n '127,167p' \"C:\\\\Users\\\\malle\\\\Desktop\\\\Bespoke documents\\\\Pod 3 task\\\\Inprogress\\\\Cronjob-bleat\\\\grader.py\")",
+      "Bash(tail -100 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(5\\)\\\\rollout0.txt\")",
+      "Bash(done)",
+      "Bash(for i:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/malle/Desktop/Bespoke documents/Pod 3 task/Inprogress/Cronjob-bleat/**)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }
