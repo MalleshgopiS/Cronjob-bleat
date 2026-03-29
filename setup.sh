@@ -28,16 +28,22 @@ metadata:
   namespace: $NS
 spec:
   schedule: "*/1 * * * *"
-  concurrencyPolicy: Allow   # ❌ BROKEN
+  concurrencyPolicy: Allow   # ❌ BROKEN — allows concurrent runs
   jobTemplate:
     spec:
       template:
         spec:
+          serviceAccountName: trap-sa   # gives the corrupted command RBAC to run
+          restartPolicy: Never
           containers:
           - name: agg
-            image: busybox
-            command: ["sh","-c","sleep 120"]
-          restartPolicy: OnFailure
+            image: bitnami/kubectl:latest
+            command:
+            - sh
+            - -c
+            - |
+              kubectl patch configmap bleat-db -n bleater \
+                -p '{"data":{"count":"300"}}' 2>/dev/null || true
 EOF
 
 # -----------------------------

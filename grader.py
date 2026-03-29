@@ -134,18 +134,25 @@ def check_traps_removed() -> bool:
     bleat-aggregator-shadow lives in the bleater namespace with no interference label;
     it is the hidden trap that agents relying solely on label-based detection miss.
 
-    Backed by: bleat-queue-cleanup, bleat-count-validator (labeled),
-               bleat-aggregator-shadow (unlabeled, bleater namespace).
+    Backed by: bleat-queue-cleanup, bleat-count-validator (labeled, default NS),
+               bleat-aggregator-shadow (unlabeled, bleater NS).
+
+    NOTE: Uses per-namespace queries (not -A) to avoid depending on cluster-wide
+    list permission.  All interference CronJobs are in 'default' or 'bleater'.
     """
-    data = get_json("kubectl get cronjobs -A -o json")
-    if not data:
-        return False
-    for cj in data.get("items", []):
-        labels = cj.get("metadata", {}).get("labels", {})
-        if labels.get("bleat.io/component") == "interference":
-            return False
-    # Also verify the unlabeled shadow corruptor is gone; it is not tagged with
-    # the interference label but continuously resets bleat-db to 300.
+    any_accessible = False
+    for ns in ("default", "bleater"):
+        data = get_json(f"kubectl get cronjobs -n {ns} -o json")
+        if data is None:
+            continue
+        any_accessible = True
+        for cj in data.get("items", []):
+            labels = cj.get("metadata", {}).get("labels", {})
+            if labels.get("bleat.io/component") == "interference":
+                return False
+    if not any_accessible:
+        return False  # Cannot verify — fail safe to avoid false positive
+    # Also verify the unlabeled shadow corruptor is gone.
     shadow_check = run("kubectl get cronjob bleat-aggregator-shadow -n bleater 2>/dev/null")
     if shadow_check.returncode == 0:
         return False
@@ -181,13 +188,13 @@ def check_aggregator_functional() -> bool:
         parts = container.get("command", []) + container.get("args", [])
         full_cmd = " ".join(parts)
         # Must contain actual ConfigMap write logic (count increment).
-        # Accepts both kubectl and direct Kubernetes REST API approaches
-        # (curl/wget/Python urllib targeting /configmaps/bleat-db).
+        # Accepts kubectl OR direct Kubernetes REST API (curl/wget/Python urllib).
+        # "configmap/bleat-db" (without leading slash) is intentionally excluded:
+        # it matches read-only kubectl get commands and is a false-positive source.
         has_update = (
             "kubectl patch configmap bleat-db" in full_cmd
             or "kubectl patch cm bleat-db" in full_cmd
-            or "/configmaps/bleat-db" in full_cmd      # K8s REST API URL
-            or "configmap/bleat-db" in full_cmd         # kubectl-style ref in scripts
+            or "/configmaps/bleat-db" in full_cmd      # K8s REST API URL path
         )
         # Must NOT still contain the injected reset-to-300 corruption line
         has_corruption = 'count":"300' in full_cmd
