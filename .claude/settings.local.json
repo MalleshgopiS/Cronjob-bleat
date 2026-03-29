@@ -42,7 +42,11 @@
       "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout6.txt\")",
       "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout7.txt\")",
       "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout8.txt\")",
-      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout9.txt\")"
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout9.txt\")",
+      "Bash(grep -n \"startingDeadlineSeconds\\\\|activeDeadlineSeconds\" \"/c/Users/malle/Downloads/rollouts-8f809668 \\(7\\)\"/*.txt)",
+      "Bash(ls -la \"/c/Users/malle/Downloads/rollouts-8f809668 \\(7\\)/\")",
+      "Bash(wc -l \"/c/Users/malle/Downloads/rollouts-8f809668 \\(7\\)\"/rollout*.txt)",
+      "Bash(for f:*)"
     ]
   }
 }
