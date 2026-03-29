@@ -105,26 +105,18 @@ set -e
 # -----------------------------
 echo "🔧 Fixing CronJob configuration..."
 
-# Read operational SLA requirements from the cluster runbook ConfigMap
-# (task.yaml: "Operational SLA requirements are documented in the cluster")
-RUNBOOK=$(kubectl get configmap bleat-ops-runbook -n $NS -o json 2>/dev/null || echo "{}")
-STARTING_DEADLINE=$(echo "$RUNBOOK" | jq -r '.data.startingDeadlineSeconds // "300"')
-ACTIVE_DEADLINE=$(echo "$RUNBOOK" | jq -r '.data.activeDeadlineSeconds // "1800"')
-REQUIRED_SCHEDULE=$(echo "$RUNBOOK" | jq -r '.data.schedule // "*/1 * * * *"')
-echo "📋 Runbook: schedule=$REQUIRED_SCHEDULE startingDeadline=${STARTING_DEADLINE}s activDeadline=${ACTIVE_DEADLINE}s"
-
-kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p "{
-  \"spec\":{
-    \"schedule\":\"${REQUIRED_SCHEDULE}\",
-    \"concurrencyPolicy\":\"Forbid\",
-    \"startingDeadlineSeconds\":${STARTING_DEADLINE},
-    \"jobTemplate\":{
-      \"spec\":{
-        \"activeDeadlineSeconds\":${ACTIVE_DEADLINE}
+kubectl patch cronjob "$CRONJOB_NAME" -n $NS -p '{
+  "spec":{
+    "schedule":"*/1 * * * *",
+    "concurrencyPolicy":"Forbid",
+    "startingDeadlineSeconds":300,
+    "jobTemplate":{
+      "spec":{
+        "activeDeadlineSeconds":1800
       }
     }
   }
-}"
+}'
 
 # -----------------------------
 # RESTORE AGGREGATOR COMMAND

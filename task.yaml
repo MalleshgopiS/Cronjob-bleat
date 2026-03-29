@@ -3,52 +3,60 @@ id: bleat-cronjob-rollup-corruption
 prompt: |
   [Context]
 
-  You are a DevOps engineer working on Bleater, a distributed microservices-based social media platform.
-  Bleater is deployed on Kubernetes (k3s) in the `bleater` namespace. You can check allowed namespaces at `/home/ubuntu/.allowed_namespaces`.
+  You are a DevOps engineer responsible for Bleater, a distributed microservices-based social media platform.
+  The application is running on a Kubernetes (k3s) cluster within the `bleater` namespace. If needed, you can
+  verify which namespaces you are allowed to access by checking `/home/ubuntu/.allowed_namespaces`.
 
-  Information about the application and infrastructure is available at:
+  Documentation and internal knowledge about the system can be found at:
   - http://gitea.devops.local/root/bleater-app/wiki
   - http://passwords.devops.local
 
-  Your email is available at:
+  You can access your email at:
   - http://maddy.devops.local
 
-  Internal communication happens via:
+  Team communication takes place through:
   - http://mattermost.devops.local
 
   [Business Objective]
 
-  Bleater relies on accurate per-minute metrics aggregation to power dashboards, alerts, and product analytics.
-  Leadership has raised an urgent incident — engagement numbers are wrong, and the engineering team cannot
-  determine why previously applied fixes keep failing to hold.
+  Bleater depends heavily on accurate per-minute metrics aggregation to support dashboards, alerting, and
+  product analytics. Recently, leadership has raised an urgent concern because engagement numbers are no longer
+  reliable. The engineering team has already attempted fixes, but none of them have remained effective, and the
+  issue keeps coming back.
 
   [Scenario]
 
-  Engineers have reported the following symptoms:
-  - Bleat counts appear doubled or inconsistent during high traffic periods
-  - Some aggregation jobs appear to run far longer than expected
-  - Fixes applied to the system do not seem to persist — the system reverts to a broken state on its own
+  Engineers investigating the system have noticed several unusual behaviors. Bleat counts sometimes appear
+  inflated or inconsistent, particularly during periods of high traffic. In addition, some of the aggregation
+  jobs seem to run much longer than expected, which is not typical for this workload. Even more concerning is
+  that when fixes are applied, they do not last — the system eventually returns to the same broken state without
+  any clear manual intervention.
 
-  Investigate the platform's scheduled jobs and data pipeline. Something in the environment is not behaving
-  as expected. You may find useful context in the Gitea wiki, your email, or the internal chat.
+  You should investigate how scheduled jobs and the data pipeline are functioning in this environment. There
+  appears to be something in the system that is not behaving as intended. Relevant clues and context may be
+  scattered across the Gitea wiki, your email inbox, or internal team conversations.
+
+  [SLA Requirements]
+
+  The aggregation system is expected to meet specific operational requirements. If a job cannot begin within
+  five minutes of its scheduled time, it should be skipped automatically rather than delayed indefinitely.
+  Additionally, each job execution must be time-bound, meaning there should be a maximum allowed runtime to
+  prevent jobs from running indefinitely.
 
   [Goal]
 
-  Restore the metrics aggregation system to reliable operation.
+  Your task is to restore the metrics aggregation system so that it operates reliably again.
 
-  The system is considered healthy when:
-  - The bleat count pipeline runs correctly (real aggregation logic — not a placeholder command)
-  - Bleat counts are accurate, non-duplicated, and self-healing
-  - The fix remains stable under continued system operation
-
-  Operational SLA requirements and configuration specifications for this system are
-  documented in the cluster. Check the `bleater` namespace for the system runbook.
+  The system can be considered healthy once the bleat count pipeline is executing real aggregation logic
+  instead of placeholder behavior, the resulting counts are accurate and free from duplication, and the system
+  is able to maintain this correctness over time without reverting to a faulty state.
 
   [Constraints]
 
-  - Investigate and fix the existing system; do not recreate it
+  - You must investigate and repair the existing system rather than rebuilding it
   - Do not delete the primary aggregation CronJob
-  - Ensure your changes remain durable under continued system operation
+  - The aggregation schedule must remain unchanged, as the per-minute cadence is required
+  - Any fixes you implement should remain stable and persist during ongoing system operation
 
 metadata:
   category: Platform Engineering

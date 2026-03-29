@@ -26,7 +26,23 @@
       "Bash(for i:*)",
       "Bash(do echo:*)",
       "Read(//c/Users/malle/Desktop/Bespoke documents/Pod 3 task/Inprogress/Cronjob-bleat/**)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(tail -100 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout0.txt\")",
+      "Bash(tail -100 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout1.txt\")",
+      "Bash(tail -100 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout2.txt\")",
+      "Bash(tail -100 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout3.txt\")",
+      "Bash(tail -100 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout4.txt\")",
+      "Bash(tail -50 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout0.txt\")",
+      "Bash(wc -l \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout0.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout1.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout2.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout3.txt\" \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout4.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout1.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout2.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout3.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout4.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout5.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout6.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout7.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout8.txt\")",
+      "Bash(tail -30 \"C:\\\\Users\\\\malle\\\\Downloads\\\\rollouts-8f809668 \\(6\\)\\\\rollout9.txt\")"
     ]
   }
 }

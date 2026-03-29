@@ -17,17 +17,6 @@ kubectl create configmap bleat-db -n $NS \
 kubectl create configmap bleat-db-backup -n $NS \
   --from-literal=count=100 || true
 
-# Operational runbook — discoverable by investigating the bleater namespace.
-# Agents who list/describe ConfigMaps will find this; agents who go straight
-# to patching the CronJob without investigating the namespace will miss it.
-kubectl create configmap bleat-ops-runbook -n $NS \
-  --from-literal=schedule="*/1 * * * *" \
-  --from-literal=concurrencyPolicy="Forbid" \
-  --from-literal=startingDeadlineSeconds="300" \
-  --from-literal=activeDeadlineSeconds="1800" \
-  --from-literal=notes="CronJob schedule must not be changed. Jobs that miss their start window by more than startingDeadlineSeconds seconds are skipped. Jobs exceeding activeDeadlineSeconds are terminated." \
-  || true
-
 # -----------------------------
 # MAIN CRONJOB (BROKEN)
 # -----------------------------
