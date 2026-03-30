@@ -6,23 +6,33 @@ aggregation system in the bleater namespace.
 
 Four equal-weight subscores, each backed by one or more interference traps:
 
-  Trap → subscore mapping
-    bleat-metrics-reconciler   (reverts concurrencyPolicy)        → config_complete
-    bleat-job-monitor          (removes deadline settings)        → config_complete
-    bleat-aggregator-shadow    (unlabeled; resets bleat-db)       → config_complete, traps_removed
-    bleat-schedule-override    (changes schedule)                 → schedule_unchanged
-    bleat-queue-cleanup        (kills running jobs)               → traps_removed
-    bleat-count-validator      (corrupts count data)              → traps_removed
-    aggregator script          (injected reset-to-300 corruption) → aggregator_functional
+  Trap → subscore mapping (each subscore has its own independent gate)
+    bleat-metrics-reconciler   (labeled; reverts concurrencyPolicy)        → config_complete
+    bleat-job-monitor          (labeled; removes deadline settings)        → config_complete
+    bleat-schedule-override    (unlabeled; changes schedule to */5 * * * *) → schedule_unchanged
+    bleat-queue-cleanup        (labeled; kills running jobs)               → traps_removed
+    bleat-count-validator      (labeled; corrupts count data)              → traps_removed
+    bleat-metrics-relay        (unlabeled; resets bleat-db)                → traps_removed
+    aggregator script          (injected reset-to-300 corruption)          → aggregator_functional
+
+  Subscore independence:
+    config_complete     — gated only by labeled traps (reconciler, job-monitor)
+    schedule_unchanged  — gated only by unlabeled bleat-schedule-override
+    traps_removed       — gated by labeled traps + unlabeled bleat-metrics-relay
+    aggregator_functional — gated only by the injected command corruption
+
+  bleat-schedule-override and bleat-metrics-relay both live in 'default' with NO
+  interference label. Agents using label-based deletion miss both; only agents
+  that inspect every CronJob in 'default' and notice trap-sa find and remove them.
 
 Expected scoring:
   - Reference solution : 4/4 = 1.00
-  - Typical agent      : 1–3/4  (mean target < 0.50, CV target > 0.15)
+  - Typical agent      : 1–2/4  (mean target < 0.50, CV target > 0.20)
 
 Scoring model (estimated pass rates per subscore):
-  config_complete      ~25-35%  (requires shadow deleted; label-only cleanup misses it)
-  schedule_unchanged   ~85-95%  (task constraint — agents keep per-minute cadence)
-  traps_removed        ~25-35%  (same shadow requirement; deep investigation needed)
+  config_complete      ~80-85%  (labeled traps; most thorough agents fix CronJob config)
+  schedule_unchanged   ~20-30%  (unlabeled bleat-schedule-override; label-only agents miss it)
+  traps_removed        ~20-30%  (requires unlabeled relay deleted; label-only agents miss it)
   aggregator_functional ~40-50% (real logic; accepts kubectl OR K8s REST API)
 """
 import subprocess
@@ -76,41 +86,29 @@ def get_configmap():
 # ─────────────────────────────────────────
 
 def check_config_complete() -> bool:
-    """Three safety controls all present AND hidden shadow corruptor removed.
+    """Three safety controls all present on the primary aggregator CronJob.
 
     concurrencyPolicy=Forbid, startingDeadlineSeconds, and activeDeadlineSeconds
-    must all be set, AND bleat-aggregator-shadow must be deleted.  Shadow has no
-    interference label so label-only cleanup leaves it running; while it exists it
-    continuously resets bleat-db, making the configuration effectively unstable.
+    must all be set.
 
     Backed by:
       - bleat-metrics-reconciler: reverts concurrencyPolicy to Allow
       - bleat-job-monitor: strips startingDeadlineSeconds and activeDeadlineSeconds
-      - bleat-aggregator-shadow: unlabeled corruptor that undermines the fix
 
     Discoverable via:
       - Symptom "counts doubled during high traffic" → concurrencyPolicy=Forbid
-      - task.yaml SLA: "jobs not starting within 5 min must be skipped"
-        → startingDeadlineSeconds
-      - task.yaml SLA: "max wall-clock run time must be enforced"
-        → activeDeadlineSeconds
-      - Persistent data corruption despite config fixes → shadow CronJob
+      - task.yaml SLA: stale jobs must be skipped → startingDeadlineSeconds
+      - task.yaml SLA: runaway jobs must be terminated → activeDeadlineSeconds
     """
     cj = get_cronjob()
     if not cj:
         return False
     spec = cj.get("spec", {})
     job_spec = spec.get("jobTemplate", {}).get("spec", {})
-    # Shadow has no bleat.io/component=interference label; agents using only
-    # label-based cleanup will miss it. Its continued presence means the data
-    # layer keeps resetting, so the configuration fix cannot hold.
-    shadow_check = run("kubectl get cronjob bleat-aggregator-shadow -n bleater 2>/dev/null")
-    shadow_present = (shadow_check.returncode == 0)
     return (
         spec.get("concurrencyPolicy") == "Forbid"
         and spec.get("startingDeadlineSeconds") is not None
         and job_spec.get("activeDeadlineSeconds") is not None
-        and not shadow_present
     )
 
 
@@ -128,17 +126,21 @@ def check_schedule_unchanged() -> bool:
 
 
 def check_traps_removed() -> bool:
-    """No interference CronJobs remain — labeled ones AND the unlabeled shadow.
+    """No interference CronJobs remain — labeled ones AND the unlabeled relay.
 
-    Labeled interference CronJobs are discoverable via bleat.io/component=interference.
-    bleat-aggregator-shadow lives in the bleater namespace with no interference label;
-    it is the hidden trap that agents relying solely on label-based detection miss.
+    Five labeled CronJobs carry bleat.io/component=interference and live in the
+    'default' namespace — straightforward to find and delete by label.
+
+    bleat-metrics-relay also lives in 'default' but has NO interference label.
+    Agents that run 'kubectl delete cronjob -l bleat.io/component=interference'
+    leave it running. Only agents who inspect every CronJob in 'default' and
+    notice its use of trap-sa will find and remove it.
 
     Backed by: bleat-queue-cleanup, bleat-count-validator (labeled, default NS),
-               bleat-aggregator-shadow (unlabeled, bleater NS).
+               bleat-metrics-relay (unlabeled, default NS).
 
-    NOTE: Uses per-namespace queries (not -A) to avoid depending on cluster-wide
-    list permission.  All interference CronJobs are in 'default' or 'bleater'.
+    NOTE: Uses per-namespace queries instead of -A to avoid needing cluster-wide
+    list permission.  All interference CronJobs are in the 'default' namespace.
     """
     any_accessible = False
     for ns in ("default", "bleater"):
@@ -152,9 +154,9 @@ def check_traps_removed() -> bool:
                 return False
     if not any_accessible:
         return False  # Cannot verify — fail safe to avoid false positive
-    # Also verify the unlabeled shadow corruptor is gone.
-    shadow_check = run("kubectl get cronjob bleat-aggregator-shadow -n bleater 2>/dev/null")
-    if shadow_check.returncode == 0:
+    # Also verify the unlabeled relay corruptor is gone from default namespace.
+    relay_check = run("kubectl get cronjob bleat-metrics-relay -n default 2>/dev/null")
+    if relay_check.returncode == 0:
         return False
     return True
 

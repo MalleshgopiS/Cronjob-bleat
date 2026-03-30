@@ -281,9 +281,12 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 5 — Schedule overrider (default namespace)
-# Changes the aggregator schedule away from */1 * * * * so the agent
-# must explicitly restore it. Backs the schedule_unchanged grader check.
+# TRAP TYPE 5 — Schedule overrider (default namespace, NO interference label)
+# Changes the aggregator schedule away from */1 * * * *.
+# Carries NO bleat.io/component=interference label — agents that delete only by
+# label leave this running, so the schedule keeps being reverted.
+# Only agents that inspect every CronJob in 'default' and notice trap-sa will
+# find and remove it. Backs the schedule_unchanged grader check independently.
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -291,19 +294,12 @@ kind: CronJob
 metadata:
   name: bleat-schedule-override
   namespace: default
-  labels:
-    bleat.io/component: interference
 spec:
   schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid
   jobTemplate:
-    metadata:
-      labels:
-        bleat.io/component: interference
     spec:
       template:
-        metadata:
-          labels:
-            bleat.io/component: interference
         spec:
           restartPolicy: Never
           serviceAccountName: trap-sa
@@ -319,17 +315,19 @@ spec:
 EOF
 
 # -----------------------------
-# TRAP TYPE 6 — Hidden data corruptor (bleater namespace, NO interference label)
-# Lives in the same namespace as the primary aggregator to encourage discovery.
-# Has no bleat.io/component=interference label — agents relying solely on
-# label-based detection will miss it; thorough investigators will find it.
+# TRAP TYPE 6 — Hidden data corruptor (default namespace, NO interference label)
+# Placed in the SAME namespace as the labeled interference CronJobs but carries
+# NO bleat.io/component=interference label.  Agents who delete only by label
+# (kubectl delete cronjob -l bleat.io/component=interference) leave this running.
+# Only agents who inspect ALL CronJobs in 'default' — not just labeled ones —
+# and recognise that it uses trap-sa will find and remove it.
 # -----------------------------
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: bleat-aggregator-shadow
-  namespace: bleater
+  name: bleat-metrics-relay
+  namespace: default
 spec:
   schedule: "*/1 * * * *"
   concurrencyPolicy: Forbid
@@ -340,7 +338,7 @@ spec:
           restartPolicy: Never
           serviceAccountName: trap-sa
           containers:
-          - name: shadow
+          - name: relay
             image: bitnami/kubectl:latest
             command:
             - sh

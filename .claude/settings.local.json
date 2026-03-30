@@ -47,7 +47,8 @@
       "Bash(ls -la \"/c/Users/malle/Downloads/rollouts-8f809668 \\(7\\)/\")",
       "Bash(wc -l \"/c/Users/malle/Downloads/rollouts-8f809668 \\(7\\)\"/rollout*.txt)",
       "Bash(for f:*)",
-      "Bash(py --version)"
+      "Bash(py --version)",
+      "Bash(echo \"  no has_corruption \\(count:\"\"300\"\"\\)\")"
     ]
   }
 }

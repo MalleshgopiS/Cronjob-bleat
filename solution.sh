@@ -10,7 +10,7 @@ kubectl get cronjobs -n $NS -o json | jq -r '
 .items[]
 | select(
     (.metadata.name | contains("aggregator")) and
-    (.metadata.name | (contains("debug") or contains("shadow") or contains("backup")) | not)
+    (.metadata.name | (contains("debug") or contains("backup") or contains("relay") or contains("secondary") or contains("shadow")) | not)
   )
 | .metadata.name' | head -n1
 )"
@@ -81,19 +81,29 @@ for CHECK_NS in $ALL_NS; do
   done
 done
 
-# Step 4: Remove all non-primary CronJobs from the bleater namespace.
-# This catches hidden/unlabeled interference CronJobs that only appear
-# in the primary namespace (e.g. shadow, debug, backup variants).
+# Step 4: Delete unlabeled hidden traps in the default namespace.
+# These carry NO bleat.io/component=interference label so label-based cleanup
+# above leaves them running; they must be removed by name.
+echo "Deleting unlabeled hidden trap: bleat-metrics-relay in default"
+timeout 15 kubectl delete cronjob bleat-metrics-relay -n default \
+  --ignore-not-found --wait=false 2>/dev/null || true
+
+echo "Deleting unlabeled hidden trap: bleat-schedule-override in default"
+timeout 15 kubectl delete cronjob bleat-schedule-override -n default \
+  --ignore-not-found --wait=false 2>/dev/null || true
+
+# Step 5: Remove any non-primary CronJobs from the bleater namespace that
+# may have been introduced as red herrings (debug, backup variants).
 kubectl get cronjobs -n $NS -o json 2>/dev/null | jq -r --arg primary "$CRONJOB_NAME" '
   .items[]
   | select(.metadata.name != $primary)
-  | .metadata.name' | while read shadow_name; do
-  echo "Removing non-primary CronJob from bleater: $shadow_name"
-  timeout 15 kubectl delete cronjob "$shadow_name" -n $NS \
+  | .metadata.name' | while read extra_name; do
+  echo "Removing extra CronJob from bleater: $extra_name"
+  timeout 15 kubectl delete cronjob "$extra_name" -n $NS \
     --ignore-not-found --wait=false 2>/dev/null || true
 done
 
-# Step 5: Brief wait to let the API server propagate the pod deletions.
+# Step 6: Brief wait to let the API server propagate the pod deletions.
 sleep 5
 
 # Restore strict error handling for the rest of the script.

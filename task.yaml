@@ -38,10 +38,9 @@ prompt: |
 
   [SLA Requirements]
 
-  The aggregation system is expected to meet specific operational requirements. If a job cannot begin within
-  five minutes of its scheduled time, it should be skipped automatically rather than delayed indefinitely.
-  Additionally, each job execution must be time-bound, meaning there should be a maximum allowed runtime to
-  prevent jobs from running indefinitely.
+  The aggregation system must honour the operational SLAs documented for this service. Stale jobs that miss
+  their scheduled start window must be automatically skipped rather than allowed to queue indefinitely.
+  Runaway job executions must be bounded so that a single stuck run cannot block the pipeline.
 
   [Goal]
 
@@ -57,6 +56,7 @@ prompt: |
   - Do not delete the primary aggregation CronJob
   - The aggregation schedule must remain unchanged, as the per-minute cadence is required
   - Any fixes you implement should remain stable and persist during ongoing system operation
+  - All unauthorized resources introduced into any accessible namespace must be identified and removed
 
 metadata:
   category: Platform Engineering
